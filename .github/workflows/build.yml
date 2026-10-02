@@ -83,11 +83,13 @@ jobs:
         run: |
           set -e
           name="linemon-${GITHUB_REF_NAME//\//-}"
-          [ "$name" = "linemon-" ] && name="linemon-${GITHUB_SHA::8}"
+          if [ "$name" = "linemon-" ]; then
+            name="linemon-${GITHUB_SHA::8}"
+          fi
           mkdir -p out
           tar -czf "out/${name}.tar.gz" deploy deploy-cell tools tests README.md LICENSE
           echo "NAME=$name" >> "$GITHUB_ENV"
-          echo "=== 包内容 ==="
+          echo "=== 包内容（前 40 项） ==="
           tar -tzf "out/${name}.tar.gz" | head -40
           echo "..."
           echo "总计 $(tar -tzf "out/${name}.tar.gz" | wc -l) 项，$(du -h "out/${name}.tar.gz" | cut -f1)"

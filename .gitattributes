@@ -2,6 +2,7 @@
 # Windows 上 edit / git 默认会把文本转成 CRLF，那会让 shebang 和
 # `case "$x" in` 之类的东西在 busybox 下直接报错（`\r` 被当成命令名的一部分），
 # 所以这里强制层。
+*               text=auto eol=lf
 *.sh            text eol=lf
 *.lua           text eol=lf
 *.py            text eol=lf
@@ -12,6 +13,10 @@
 *.js            text eol=lf
 *.jsx           text eol=lf
 *.css           text eol=lf
+*.md            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.txt           text eol=lf
 
 # 这些是 shell 脚本但没有 .sh 后缀
 deploy/www/cgi-bin/lm-config  text eol=lf

@@ -312,7 +312,8 @@ web/                                新版看板源码（只在开发机上构�
 ```
 tools/                               构建/检查用的小工具（不部署到路由器）
 ├── fetch-vendor.sh                  拉旧版看板的第三方库到 deploy/www/lm/lib/
-└── check-inline-js.js               抽 HTML 内联 <script> 做语法检查（CI 用）
+├── check-inline-js.js               抽 HTML 内联 <script> 做语法检查（CI 用）
+└── ci-sim.sh                        本机模拟一遍 CI：铺产物 → 拉库 → 打包 → 19 项自检
 
 .github/workflows/build.yml          CI：语法体检 → 构建 → 组装 → 自检 → 发 Release
 LICENSE                              MIT
@@ -391,6 +392,7 @@ ssh root@192.168.66.1
 ```sh
 for f in $(find deploy deploy-cell tools -name '*.sh'); do sh -n "$f" || echo "FAIL $f"; done
 node tools/check-inline-js.js deploy/www/lm/line.html deploy/www/lm/config.html
+sh tools/ci-sim.sh     # 完整的组装 + 19 项自检（需要 web/dist 已构建）
 ```
 
 ## 数据格式

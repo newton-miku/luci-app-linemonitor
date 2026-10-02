@@ -1,6 +1,6 @@
 # 线路质量监测（OpenWrt 双 WAN 延迟监测）
 
-[![build](https://github.com/<你>/<仓库>/actions/workflows/build.yml/badge.svg)](https://github.com/<你>/<仓库>/actions/workflows/build.yml)
+[![build](https://github.com/newton-miku/luci-app-linemonitor/actions/workflows/build.yml/badge.svg)](https://github.com/newton-miku/luci-app-linemonitor/actions/workflows/build.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 在 OpenWrt 路由器上同时监测**两条出口**的延迟质量，并把内网设备正在跑的 TCP 流按出口归类，
@@ -332,7 +332,7 @@ LICENSE                              MIT
 
 ```sh
 # 路由器上
-wget -O /tmp/lm.tar.gz https://github.com/<你>/<仓库>/releases/latest/download/linemon-<版本>.tar.gz
+wget -O /tmp/lm.tar.gz https://github.com/newton-miku/luci-app-linemonitor/releases/latest/download/linemon-<版本>.tar.gz
 mkdir -p /tmp/lm && tar -xzf /tmp/lm.tar.gz -C /tmp/lm
 sh /tmp/lm/deploy/install.sh
 ```

@@ -1,0 +1,34 @@
+{
+ "title": "线路质量监测看板",
+ "subtitle": "验证统计",
+ "lan_prefix": "192.168.66.",
+ "exits": [
+  {
+   "if": "eth1",
+   "label": "移动"
+  },
+  {
+   "if": "pppoe-wan2",
+   "label": "电信"
+  }
+ ],
+ "targets_v4": [
+  "阿里DNS",
+  "腾讯DNS",
+  "CNNIC",
+  "微信",
+  "淘宝",
+  "B站",
+  "字节",
+  "QQ"
+ ],
+ "targets_v6": [
+  "阿里v6",
+  "腾讯v6",
+  "移动v6"
+ ],
+ "th_max_warn": 200,
+ "th_max_bad": 220,
+ "th_sd_warn": 15,
+ "th_sd_bad": 20
+}

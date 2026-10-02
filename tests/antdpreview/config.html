@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>线路监测 — 设置</title>
+<link rel="stylesheet" href="lib/antd.dark.min.css">
+<style>
+/* 页面底色与栅格：antd 只管组件本身 */
+html, body { background:#000; }
+/* 原生控件（select 展开的 option 列表、datalist、滚动条）交给浏览器画成深色，
+   否则 option 列表是白底浅字，基本看不清 */
+html { color-scheme: dark; }
+body {
+  margin:0; font-size:14px; color:rgba(255,255,255,.85);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Noto Sans','PingFang SC','Microsoft YaHei',sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.lm-page { max-width:1440px; margin:0 auto; padding:20px 24px 24px; }
+
+.lm-head { display:flex; align-items:center; gap:16px; margin-bottom:16px; }
+.lm-head h1 { margin:0; font-size:20px; font-weight:600; }
+
+.lm-page .ant-card { margin-bottom:16px; }
+.lm-page .ant-card-body { padding:16px; }
+
+/* 表单栅格 */
+.lm-field { min-width:0; }
+.lm-field > label { display:block; margin-bottom:6px; font-size:12px; color:rgba(255,255,255,.45); }
+.lm-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.lm-grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.lm-field .ant-input, .lm-field textarea { font-family:ui-monospace,Consolas,'Courier New',monospace; font-size:13px; }
+.lm-field + .lm-field { margin-top:14px; }
+/* 下拉框：原生 <select> 套 .ant-input 后高度会塌成 auto，和旁边的输入框对不齐；
+   展开的 option 列表由浏览器绘制，除了 color-scheme 再显式配一次色兜底老内核 */
+select.ant-input { cursor:pointer; height:32px; padding:0 11px; line-height:30px; }
+select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
+
+/* 出口表：antd 默认单元格留白偏大，这里收紧 */
+.lm-page .ant-table table { width:100%; }
+.lm-page .ant-table-thead > tr > th,
+.lm-page .ant-table-tbody > tr > td { padding:6px 8px; vertical-align:middle; }
+.lm-page .ant-table-thead > tr > th { font-weight:500; }
+
+/* 说明文字 */
+.lm-hint { margin:12px 0 0; font-size:12px; line-height:1.8; color:rgba(255,255,255,.45); }
+.lm-hint b { color:rgba(255,255,255,.85); font-weight:600; }
+.lm-hint code { padding:1px 5px; border-radius:2px; font-size:12px; background:rgba(255,255,255,.08);
+                color:#69b1ff; font-family:ui-monospace,Consolas,monospace; }
+.lm-hint .ant-btn { margin:0; }
+
+/* 预览代码块 */
+.lm-pre { margin:0; padding:12px; max-height:calc(100vh - 260px); overflow:auto; white-space:pre;
+          font-family:ui-monospace,Consolas,monospace; font-size:12px; line-height:1.6;
+          color:rgba(255,255,255,.65); background:#1f1f1f; border:1px solid #303030; border-radius:2px; }
+
+/* 标签页：antd 的 ink-bar 靠 JS 算 transform，这里只用文字变色，够用 */
+.lm-tabs .ant-tabs-nav { margin:0 0 16px; }
+.lm-pane { display:none; }
+.lm-pane.active { display:block; }
+
+/* 底部操作条：常驻，切到哪一页都能保存 */
+.lm-actions {
+  position:sticky; bottom:0; z-index:10;
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  margin-top:4px; padding:12px 16px;
+  background:#141414; border:1px solid #303030; border-radius:2px;
+}
+.lm-status { font-size:13px; }
+.lm-ok { color:#49aa19; }
+.lm-bad { color:#dc4446; }
+.lm-pending { color:#d89614; }
+
+/* 开关行：antd Switch 配一句随状态变的说明文字 */
+.lm-switch-row { display:flex; align-items:center; gap:10px; min-height:32px; }
+.lm-switch-text { font-size:13px; color:rgba(255,255,255,.65); }
+</style>
+</head>
+<body>
+
+<div class="lm-page">
+
+  <div class="lm-head">
+    <h1>线路监测 — 设置</h1>
+    <a class="ant-btn ant-btn-sm ant-btn-default" href="line.html"><span>← 返回看板</span></a>
+  </div>
+
+  <div class="ant-tabs lm-tabs">
+    <div class="ant-tabs-nav" role="tablist">
+      <div class="ant-tabs-nav-wrap">
+        <div class="ant-tabs-nav-list" id="cfgTabs">
+          <div class="ant-tabs-tab ant-tabs-tab-active" data-tab="basic" role="tab"><div class="ant-tabs-tab-btn">基本</div></div>
+          <div class="ant-tabs-tab" data-tab="exits" role="tab"><div class="ant-tabs-tab-btn">出口</div></div>
+          <div class="ant-tabs-tab" data-tab="targets" role="tab"><div class="ant-tabs-tab-btn">监测目标</div></div>
+          <div class="ant-tabs-tab" data-tab="collect" role="tab"><div class="ant-tabs-tab-btn">采集参数</div></div>
+          <div class="ant-tabs-tab" data-tab="alert" role="tab"><div class="ant-tabs-tab-btn">告警推送</div></div>
+          <div class="ant-tabs-tab" data-tab="stat" role="tab"><div class="ant-tabs-tab-btn">配色阈值</div></div>
+          <div class="ant-tabs-tab" data-tab="preview" role="tab"><div class="ant-tabs-tab-btn">配置预览</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 基本 ============ -->
+  <div class="lm-pane active" id="pane-basic">
+    <div class="ant-card">
+      <div class="ant-card-head">
+        <div class="ant-card-head-wrapper"><div class="ant-card-head-title">看板显示</div></div>
+      </div>
+      <div class="ant-card-body">
+        <div class="lm-grid2">
+          <div class="lm-field"><label>标题</label><input class="ant-input" type="text" id="dashTitle"></div>
+          <div class="lm-field"><label>副标题（留空则按出口自动生成）</label><input class="ant-input" type="text" id="dashSubtitle"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ant-card">
+      <div class="ant-card-head">
+        <div class="ant-card-head-wrapper"><div class="ant-card-head-title">内网</div></div>
+      </div>
+      <div class="ant-card-body">
+        <div class="lm-grid2">
+          <div class="lm-field"><label>内网网段（CIDR，留空 = 自动识别）</label><input class="ant-input" type="text" id="lanNets" placeholder="留空自动识别；也可写 192.168.66.0/24 10.0.0.0/8"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 出口 ============ -->
+  <div class="lm-pane" id="pane-exits">
+    <div class="ant-card">
+      <div class="ant-card-head">
+        <div class="ant-card-head-wrapper"><div class="ant-card-head-title">出口</div></div>
+      </div>
+      <div class="ant-card-body">
+        <div class="ant-table">
+          <div class="ant-table-container">
+            <div class="ant-table-content">
+              <table>
+                <thead class="ant-table-thead">
+                  <tr class="ant-table-row">
+                    <th class="ant-table-cell" style="width:18%">接口名</th>
+                    <th class="ant-table-cell" style="width:15%">显示名</th>
+                    <th class="ant-table-cell" style="width:22%">源IP（填 auto 自动获取）</th>
+                    <th class="ant-table-cell" style="width:18%">mark 值（逗号分隔）</th>
+                    <th class="ant-table-cell" style="width:15%">类型</th>
+                    <th class="ant-table-cell"></th>
+                  </tr>
+                </thead>
+                <tbody class="ant-table-tbody" id="exitRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <p class="lm-hint">
+          <button class="ant-btn ant-btn-sm ant-btn-dashed" id="addExit"><span>+ 添加出口</span></button>
+        </p>
+        <p class="lm-hint">
+          接口名 = 路由器上的网络接口，用于绑定出口发包。<b>点输入框会列出本机现有接口</b>
+          （实时读的，后面带当前 IPv4 地址），也可以直接手打。<br>
+          显示名 = 看板上显示的名字，<b>不能有空格</b>。<br>
+          源IP = 测 HTTP 目标时用来临时加一条源地址策略路由。<b>DHCP 出口必须填 <code>auto</code></b>，
+          采集时自动读接口当前地址——地址一变，写死的值就挂出一条不匹配任何流量的空规则，
+          包从本接口出去、回包却走默认路由回来，TCP 握手会随机失败（表现为「时通时不通」）。
+          自带出口路由的接口（如 PPPoE）留空即可。<br>
+          mark 值 = conntrack 里的 fwmark，「实时TCP流」页靠它判断每条连接走的哪个出口。
+          填错只会让那一页的出口标错，不影响延迟曲线。可以在路由器上跑
+          <code>ip route get 1.1.1.1 mark 256</code> 逐个确认。<br>
+          类型 = 这个出口测哪一类目标。<b>看板按出口分标签页</b>，类型决定那一页里
+          画哪些曲线：<code>IPv4 + IPv6</code> 两组都画，<code>仅 IPv4</code> 就只画 v4 目标，
+          <code>仅 IPv6</code> 只画 v6 目标。只走 v6 的接口选「仅 IPv6」能省掉一半采集时间。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 监测目标 ============ -->
+  <div class="lm-pane" id="pane-targets">
+    <div class="ant-card">
+      <div class="ant-card-head">
+        <div class="ant-card-head-wrapper"><div class="ant-card-head-title">监测目标</div></div>
+      </div>
+      <div class="ant-card-body">
+        <div class="lm-field">
+          <label>ICMP 类 — 每行一个「显示名:IP或域名」，这些目标不封 ICMP</label>
+          <textarea class="ant-input" id="icmpTargets" rows="3"></textarea>
+        </div>
+        <div class="lm-field">
+          <label>HTTP 类 — 每行一个「显示名:IP或域名」，测 TCP 连接耗时（适合封 ICMP 的网站/游戏服务器）</label>
+          <textarea class="ant-input" id="httpTargets" rows="5"></textarea>
+        </div>
+        <div class="lm-field">
+          <label>IPv6 类 — 每行一个「显示名:IPv6地址」</label>
+          <textarea class="ant-input" id="icmp6Targets" rows="3"></textarea>
+        </div>
+        <p class="lm-hint">
+          每个出口都会把这里所有目标各测一遍，目标越多一轮采集越慢
+          （一轮 ≈ 目标数 × 出口数 × <code>CURL_TIMEOUT</code>）。名字用来在统计表里分组，
+          <b>改名字等于把历史数据切成两段</b>，改完想合并得连 history.log 一起改。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 采集参数 ============ -->
+  <div class="lm-pane" id="pane-collect">
+    <div class="ant-card">
+      <div class="ant-card-head">
+        <div class="ant-card-head-wrapper"><div class="ant-card-head-title">采集参数</div></div>
+      </div>
+      <div class="ant-card-body">
+        <div class="lm-grid3">
+          <div class="lm-field"><label>PING_COUNT — 每次 ping 包数</label><input class="ant-input" type="number" id="pingCount" min="1" max="10"></div>
+          <div class="lm-field"><label>CURL_TIMEOUT — curl 超时秒数</label><input class="ant-input" type="number" id="curlTimeout" min="1" max="30"></div>
+          <div class="lm-field"><label>KEEP_LINES — 历史保留行数（1440 ≈ 24 小时）</label><input class="ant-input" type="number" id="keepLines" min="60" max="10080"></div>
+        </div>
+        <div class="lm-grid3" style="margin-top:14px">
+          <div class="lm-field"><label>PUBLIC_DNS — 解析域名用的公网 DNS</label><input class="ant-input" type="text" id="publicDns"></div>
+          <div class="lm-field"><label>INTERVAL_MONITOR — 延迟采集间隔（秒）</label><input class="ant-input" type="number" id="intervalMonitor" min="10" max="3600"></div>
+          <div class="lm-field"><label>INTERVAL_TCP — TCP 流采集间隔（秒）</label><input class="ant-input" type="number" id="intervalTcp" min="2" max="300"></div>
+        </div>
+        <p class="lm-hint">
+          <b>改采集间隔后要重启服务才生效</b>（守护进程启动时读一次）：
+          在路由器上跑 <code>/etc/init.d/linemon restart</code>，或者重启路由器。<br>
+          KEEP_LINES 直接决定 history.log 多大、看板每次拉多少数据：1440 行约 760KB。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 告警推送 ============ -->
+  <div class="lm-pane" id="pane-alert">
+    <div class="ant-card">
+      <div class="ant-card-head">
+        <div class="ant-card-head-wrapper"><div class="ant-card-head-title">推送目标</div></div>
+      </div>
+      <div class="ant-card-body">
+        <div class="lm-grid3">
+          <div class="lm-field">
+            <label>ALERT_ENABLE — 总开关</label>
+            <div class="lm-switch-row">
+              <button type="button" class="ant-switch" id="alertEnable" role="switch" aria-checked="false">
+                <div class="ant-switch-handle"></div>
+                <span class="ant-switch-inner"></span>
+              </button>
+              <span class="lm-switch-text" id="alertEnableText">关闭 — 只采集，不推送</span>
+            </div>
+          </div>
+          <div class="lm-field">
+            <label>ALERT_TYPE — 推送类型</label>
+            <select class="ant-input" id="alertType">
+              <option value="json">json — 通用 POST</option>
+              <option value="wecom">wecom — 企业微信机器人</option>
+              <option value="dingtalk">dingtalk — 钉钉机器人</option>
+              <option value="feishu">feishu — 飞书机器人</option>
+              <option value="serverchan">serverchan — Server 酱</option>
+              <option value="bark">bark — iOS Bark</option>
+              <option value="telegram">telegram — Telegram Bot</option>
+            </select>
+          </div>
+          <div class="lm-field">
+            <label>ALERT_SCOPE — 监测范围</label>
+            <select class="ant-input" id="alertScope">
+              <option value="v4">v4 — 只报 IPv4 目标</option>
+              <option value="v6">v6 — 只报 IPv6 目标</option>
+              <option value="all">all — 全报</option>
+            </select>
+          </div>
+        </div>
+        <div class="lm-field"><label>ALERT_URL</label><input class="ant-input" type="text" id="alertUrl" placeholder="https://..."></div>
+        <div class="lm-field"><label>ALERT_TOKEN（部分类型不用填）</label><input class="ant-input" type="text" id="alertToken" placeholder="留空即可"></div>
+        <p class="lm-hint" id="alertHint"></p>
+      </div>
+    </div>
+
+    <div class="ant-card">
+      <div class="ant-card-head">
+        <div class="ant-card-head-wrapper"><div class="ant-card-head-title">判定与去抖</div></div>
+      </div>
+      <div class="ant-card-body">
+        <div class="lm-grid3">
+          <div class="lm-field"><label>ALERT_MAX_MS — 单次延迟超过算异常（毫秒）</label><input class="ant-input" type="text" id="alertMaxMs" placeholder="300"></div>
+          <div class="lm-field"><label>ALERT_DEBOUNCE — 连续几次才推送</label><input class="ant-input" type="number" id="alertDebounce" min="1" max="60"></div>
+          <div class="lm-field"><label>ALERT_COOLDOWN — 未恢复时重发间隔（秒）</label><input class="ant-input" type="number" id="alertCooldown" min="0" max="86400"></div>
+        </div>
+        <div class="lm-grid3" style="margin-top:14px">
+          <div class="lm-field">
+            <label>ALERT_RECOVER — 恢复时是否推一条</label>
+            <div class="lm-switch-row">
+              <button type="button" class="ant-switch ant-switch-checked" id="alertRecover" role="switch" aria-checked="true">
+                <div class="ant-switch-handle"></div>
+                <span class="ant-switch-inner"></span>
+              </button>
+              <span class="lm-switch-text" id="alertRecoverText">推送「已恢复」</span>
+            </div>
+          </div>
+          <div class="lm-field" style="grid-column:span 2">
+            <label>ALERT_IGNORE — 额外忽略（空格分隔，可写目标名 / 出口名 / 出口|目标）</label>
+            <input class="ant-input" type="text" id="alertIgnore" placeholder="抖音 pppoe-wan2|QQ">
+          </div>
+        </div>
+        <p class="lm-hint">
+          <b>不可达</b>或<b>延迟超过 ALERT_MAX_MS</b>都算异常，单个目标连续
+          <code>ALERT_DEBOUNCE</code> 次异常才推第一条，避免把偶发抖动（移动线路每隔几十分钟会有一次
+          1 秒左右的尖峰）当成故障。推过之后保持沉默，直到恢复正常，或者过了
+          <code>ALERT_COOLDOWN</code> 再提醒一次。同一轮里多个目标出问题会<b>合并成一条消息</b>发出去。<br>
+          <code>ALERT_COOLDOWN=0</code> 表示只在首次异常和恢复时各推一条。<br>
+          当前移动和电信的 IPv6 目标常年不可达，所以范围默认 <code>v4</code>，不然会一直响。
+        </p>
+      </div>
+    </div>
+
+    <div class="ant-card">
+      <div class="ant-card-head">
+        <div class="ant-card-head-wrapper"><div class="ant-card-head-title">测试</div></div>
+      </div>
+      <div class="ant-card-body">
+        <div class="lm-actions" style="position:static; border:none; background:none; padding:0; margin:0">
+          <button class="ant-btn ant-btn-default" id="alertTest"><span>发送测试消息</span></button>
+          <span class="lm-status" id="alertTestStatus"></span>
+        </div>
+        <p class="lm-hint">
+          走的是路由器上保存好的配置，所以<b>先点下面的「保存并生效」再点测试</b>。<br>
+          调完之后可以在路由器上跑 <code>/usr/bin/lm_alert.sh --status</code> 看各目标当前是正常还是已告警。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 配色阈值 ============ -->
+  <div class="lm-pane" id="pane-stat">
+    <div class="ant-card">
+      <div class="ant-card-head">
+        <div class="ant-card-head-wrapper"><div class="ant-card-head-title">统计表配色阈值</div></div>
+      </div>
+      <div class="ant-card-body">
+        <p class="lm-hint" style="margin-top:0">
+          只影响看板统计表的颜色，不参与采集、也不影响告警。单位毫秒。<b>最大延迟</b>看有没有偶发卡死，
+          <b>波动σ</b>看这条线路稳不稳。各目标基线差异大（DNS 一二十毫秒、网站几百毫秒），
+          按自己线路的实际水平调；超出 WARN 标橙色，超出 BAD 标红色。
+        </p>
+        <div class="lm-grid3" style="margin-top:14px">
+          <div class="lm-field"><label>STAT_MAX_WARN — 最大延迟橙色</label><input class="ant-input" type="number" id="statMaxWarn" min="1" max="60000"></div>
+          <div class="lm-field"><label>STAT_MAX_BAD — 最大延迟红色</label><input class="ant-input" type="number" id="statMaxBad" min="1" max="60000"></div>
+        </div>
+        <div class="lm-grid3" style="margin-top:14px">
+          <div class="lm-field"><label>STAT_SD_WARN — 波动σ橙色</label><input class="ant-input" type="number" id="statSdWarn" min="1" max="60000"></div>
+          <div class="lm-field"><label>STAT_SD_BAD — 波动σ红色</label><input class="ant-input" type="number" id="statSdBad" min="1" max="60000"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 配置预览 ============ -->
+  <div class="lm-pane" id="pane-preview">
+    <div class="ant-card">
+      <div class="ant-card-head">
+        <div class="ant-card-head-wrapper"><div class="ant-card-head-title">将要写入 /etc/line-monitor/targets.conf 的内容</div></div>
+      </div>
+      <div class="ant-card-body">
+        <pre class="lm-pre" id="preview"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="lm-actions">
+    <button class="ant-btn ant-btn-primary" id="saveBtn"><span>保存并生效</span></button>
+    <button class="ant-btn ant-btn-default" id="reloadBtn"><span>放弃修改，重新加载</span></button>
+    <span class="lm-status" id="status"></span>
+  </div>
+
+</div>
+
+<datalist id="ifaceList"></datalist>
+
+<script>
+const CGI = '/cgi-bin/lm-config';
+const $ = id => document.getElementById(id);
+let statusTimer = null;
+
+function setStatus(msg, cls) {
+  const el = $('status');
+  el.textContent = msg;
+  el.className = 'lm-status ' + (cls || '');
+  if (statusTimer) clearTimeout(statusTimer);
+  if (msg) statusTimer = setTimeout(() => { el.textContent = ''; }, 6000);
+}
+
+function setTestStatus(msg, cls) {
+  const el = $('alertTestStatus');
+  el.textContent = msg;
+  el.className = 'lm-status ' + (cls || '');
+}
+
+// ---------- 标签页 ----------
+function switchTab(name) {
+  $('cfgTabs').querySelectorAll('.ant-tabs-tab').forEach(t => {
+    t.classList.toggle('ant-tabs-tab-active', t.dataset.tab === name);
+  });
+  document.querySelectorAll('.lm-pane').forEach(p => {
+    p.classList.toggle('active', p.id === 'pane-' + name);
+  });
+}
+
+// ---------- 读配置 ----------
+async function loadConf() {
+  setStatus('读取中…');
+  try {
+    const r = await fetch(CGI + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const txt = await r.text();
+    fillForm(txt);
+    setStatus('已加载', 'lm-ok');
+  } catch (e) {
+    setStatus('读取失败：' + e.message, 'lm-bad');
+  }
+}
+
+function grab(txt, name, dflt) {
+  const m = txt.match(new RegExp('^' + name + '=(.*)$', 'm'));
+  if (!m) return dflt;
+  let v = m[1].trim();
+  if (v.startsWith('"') && v.endsWith('"')) v = v.slice(1, -1);
+  return v;
+}
+function grabExits(txt) {
+  const m = txt.match(/EXITS="([\s\S]*?)"/);
+  if (!m) return [];
+  return m[1].split(/\s+/).filter(Boolean).map(line => {
+    const p = line.split('|');
+    const type = (p[4] === 'v4' || p[4] === 'v6') ? p[4] : 'both';
+    return { iface: p[0] || '', label: p[1] || '', src: p[2] || '', mark: p[3] || '', type };
+  });
+}
+// "名字:地址 名字:地址" -> 每行一条
+function grabTargets(txt, name) {
+  return grab(txt, name, '').split(/\s+/).filter(Boolean).join('\n');
+}
+
+// 下拉框没有对应值时给个兜底，别让配置在页面上被悄悄改掉
+function setSelect(id, val, known) {
+  const el = $(id);
+  if (!el) return;
+  if (known.indexOf(val) < 0) {
+    // 认不出来的值原样塞成一个临时选项，保存时不会被改写
+    let o = el.querySelector('option[data-custom]');
+    if (!o) { o = document.createElement('option'); o.dataset.custom = '1'; el.appendChild(o); }
+    o.value = val; o.textContent = val;
+  }
+  el.value = val;
+}
+
+// ---- antd Switch 形式的是/否开关 ----
+function switchOn(id) {
+  const el = $(id);
+  return !!el && el.classList.contains('ant-switch-checked');
+}
+function setSwitch(id, on, textId, onText, offText) {
+  const el = $(id);
+  if (!el) return;
+  on = !!on;
+  el.classList.toggle('ant-switch-checked', on);
+  el.setAttribute('aria-checked', on ? 'true' : 'false');
+  const inner = el.querySelector('.ant-switch-inner');
+  if (inner) inner.textContent = on ? '开' : '关';
+  const t = textId ? $(textId) : null;
+  if (t) t.textContent = on ? onText : offText;
+}
+function bindSwitch(id, textId, onText, offText) {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener('click', () => {
+    setSwitch(id, !switchOn(id), textId, onText, offText);
+    renderPreview();
+  });
+}
+
+function fillForm(txt) {
+  $('dashTitle').value    = grab(txt, 'DASH_TITLE', '线路质量监测看板');
+  $('dashSubtitle').value = grab(txt, 'DASH_SUBTITLE', '');
+  $('lanNets').value      = grab(txt, 'LAN_NETS', '');
+  $('icmpTargets').value  = grabTargets(txt, 'ICMP_TARGETS');
+  $('httpTargets').value  = grabTargets(txt, 'HTTP_TARGETS');
+  $('icmp6Targets').value = grabTargets(txt, 'ICMP6_TARGETS');
+  $('pingCount').value       = grab(txt, 'PING_COUNT', '3');
+  $('curlTimeout').value     = grab(txt, 'CURL_TIMEOUT', '4');
+  $('keepLines').value       = grab(txt, 'KEEP_LINES', '1440');
+  $('publicDns').value       = grab(txt, 'PUBLIC_DNS', '223.5.5.5');
+  $('intervalMonitor').value = grab(txt, 'INTERVAL_MONITOR', '60');
+  $('intervalTcp').value     = grab(txt, 'INTERVAL_TCP', '5');
+  $('statMaxWarn').value     = grab(txt, 'STAT_MAX_WARN', '300');
+  $('statMaxBad').value      = grab(txt, 'STAT_MAX_BAD', '1000');
+  $('statSdWarn').value      = grab(txt, 'STAT_SD_WARN', '50');
+  $('statSdBad').value       = grab(txt, 'STAT_SD_BAD', '200');
+
+  // 告警
+  setSwitch('alertEnable', grab(txt, 'ALERT_ENABLE', '0') === '1',
+            'alertEnableText', '开启 — 异常时推送', '关闭 — 只采集，不推送');
+  setSelect('alertType',     grab(txt, 'ALERT_TYPE', 'json'),
+            ['json', 'wecom', 'dingtalk', 'feishu', 'serverchan', 'bark', 'telegram']);
+  setSelect('alertScope',    grab(txt, 'ALERT_SCOPE', 'v4'), ['v4', 'v6', 'all']);
+  setSwitch('alertRecover', grab(txt, 'ALERT_RECOVER', '1') === '1',
+            'alertRecoverText', '推送「已恢复」', '不推送');
+  $('alertUrl').value        = grab(txt, 'ALERT_URL', '');
+  $('alertToken').value      = grab(txt, 'ALERT_TOKEN', '');
+  $('alertMaxMs').value      = grab(txt, 'ALERT_MAX_MS', '300');
+  $('alertDebounce').value   = grab(txt, 'ALERT_DEBOUNCE', '3');
+  $('alertCooldown').value   = grab(txt, 'ALERT_COOLDOWN', '1800');
+  $('alertIgnore').value     = grab(txt, 'ALERT_IGNORE', '');
+  renderAlertHint();
+
+  const exits = grabExits(txt);
+  $('exitRows').innerHTML = '';
+  (exits.length ? exits : [{ iface:'', label:'', src:'', mark:'', type:'both' }]).forEach(addExitRow);
+  renderPreview();
+}
+
+// ---------- 接口列表（「接口名」的候选下拉）----------
+// <input list=...> + <datalist>：既可以从列表里挑，也能直接手打。
+// 列表是实时问路由器要的，所以插了新网卡、PPPoE 拨号成功之后刷新页面就能看到。
+async function loadIfaces() {
+  const dl = $('ifaceList');
+  if (!dl) return;
+  try {
+    const r = await fetch(CGI + '?ifaces', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const list = await r.json();
+    dl.innerHTML = list.map(i => {
+      const note = i.addr ? ' — ' + i.addr : (i.state === 'down' ? ' — 未启用' : '');
+      return '<option value="' + i.name + '">' + i.name + note + '</option>';
+    }).join('');
+  } catch (e) { /* 拿不到候选就退回纯手填，不影响配置 */ }
+}
+
+// ---------- 告警类型的说明 ----------
+const ALERT_HINTS = {
+  json:       '<b>通用 POST</b>：往 ALERT_URL 发 <code>{"title":"…","text":"…"}</code>，适合自建服务或 n8n/Node-RED 之类的中转。',
+  wecom:      '企业微信<b>群机器人</b>：URL 填完整的 webhook 地址（里面已含 key），TOKEN 留空。',
+  dingtalk:   '钉钉<b>群机器人</b>：URL 填到 <code>access_token=</code> 为止，TOKEN 填后面的值；如果机器人开了「加签」，请改用 json 类型自己算签名。',
+  feishu:     '飞书<b>自定义机器人</b>：URL 填完整的 hook 地址，TOKEN 留空。',
+  serverchan: '<b>Server 酱</b>：URL 填 <code>https://sctapi.ftqq.com/&lt;你的key&gt;.send</code>，TOKEN 留空。',
+  bark:       'iOS <b>Bark</b>：URL 填服务地址（默认 <code>https://api.day.app</code>），TOKEN 填 device key。',
+  telegram:   '<b>Telegram</b>：URL 填 <code>chat_id</code>，TOKEN 填 bot token（找 @BotFather 要）。'
+};
+function renderAlertHint() {
+  const t = $('alertType').value;
+  $('alertHint').innerHTML = ALERT_HINTS[t] || '';
+}
+
+// ---------- 出口行 ----------
+// 类型决定这个出口测哪一类目标、看板上那一页画哪些曲线：
+// v4 只测 IPv4、v6 只测 IPv6、both 都测。
+function exitTypeOptions(sel) {
+  return [['both','IPv4 + IPv6'],['v4','仅 IPv4'],['v6','仅 IPv6']]
+    .map(([v, t]) => '<option value="' + v + '"' + (v === sel ? ' selected' : '') + '>' + t + '</option>')
+    .join('');
+}
+function addExitRow(e) {
+  e = e || { iface:'', label:'', src:'', mark:'', type:'both' };
+  const tr = document.createElement('tr');
+  tr.className = 'ant-table-row ant-table-row-level-0';
+  tr.innerHTML =
+    '<td class="ant-table-cell"><input class="ant-input e-if" type="text" list="ifaceList" placeholder="eth1"></td>' +
+    '<td class="ant-table-cell"><input class="ant-input e-label" type="text" placeholder="移动"></td>' +
+    '<td class="ant-table-cell"><input class="ant-input e-src" type="text" placeholder="auto 或留空"></td>' +
+    '<td class="ant-table-cell"><input class="ant-input e-mark" type="text" placeholder="256"></td>' +
+    '<td class="ant-table-cell"><select class="ant-input e-type">' + exitTypeOptions(e.type || 'both') + '</select></td>' +
+    '<td class="ant-table-cell"><button class="ant-btn ant-btn-sm ant-btn-dangerous" type="button"><span>删除</span></button></td>';
+  tr.querySelector('.e-if').value = e.iface;
+  tr.querySelector('.e-label').value = e.label;
+  tr.querySelector('.e-src').value = e.src;
+  tr.querySelector('.e-mark').value = e.mark;
+  tr.querySelector('button').addEventListener('click', () => { tr.remove(); renderPreview(); });
+  tr.querySelectorAll('input').forEach(i => i.addEventListener('input', renderPreview));
+  tr.querySelector('.e-type').addEventListener('change', renderPreview);
+  $('exitRows').appendChild(tr);
+}
+function readExits() {
+  return [...$('exitRows').querySelectorAll('tr')].map(tr => ({
+    iface: tr.querySelector('.e-if').value.trim(),
+    label: tr.querySelector('.e-label').value.trim(),
+    src:   tr.querySelector('.e-src').value.trim(),
+    mark:  tr.querySelector('.e-mark').value.trim(),
+    type:  tr.querySelector('.e-type').value
+  })).filter(e => e.iface);
+}
+
+// ---------- 生成配置文本 ----------
+function buildConf() {
+  const exits = readExits();
+  const exitLines = exits.map(e => [e.iface, e.label, e.src, e.mark, e.type].join('|')).join('\n');
+  const oneLine = s => s.split('\n').map(x => x.trim()).filter(Boolean).join(' ');
+  const num = (id, dflt) => $(id).value.trim() || dflt;
+
+  return [
+    '# ============================================================',
+    '# 线路监测配置',
+    '# 这个文件由设置页 http://192.168.66.1/lm/config.html 生成，',
+    '# 也可以直接用 vi 改 —— 采集脚本每轮都会重新读取，保存即生效。',
+    '# ============================================================',
+    '',
+    '# ---------------- 看板 ----------------',
+    'DASH_TITLE="' + $('dashTitle').value.trim() + '"',
+    'DASH_SUBTITLE="' + $('dashSubtitle').value.trim() + '"',
+    '',
+    '# ---------------- 出口定义 ----------------',
+    '# 每行一个出口，格式：接口名|显示名|源IP|mark值|类型',
+    '#   接口名  路由器上的网络接口，用于 ping -I / curl --interface',
+    '#   显示名  看板上显示的名字，不能有空格',
+    '#   源IP    测 HTTP 目标需要源地址策略路由时填。填 auto 表示自动取接口当前地址',
+    '#           （DHCP 出口必须用 auto——地址一变，写死的值就挂出一条不匹配任何流量的',
+    '#           空策略路由，包从本接口出去、回包走主表默认路由回来，TCP 握手会随机失败）。',
+    '#           不需要策略路由就留空。',
+    '#   mark    该出口在 conntrack 里的 fwmark，多个用逗号分隔',
+    '#   类型    v4 = 只测 IPv4 目标，v6 = 只测 IPv6 目标，both = 都测',
+    '#           看板按出口分标签页，类型决定那一页里有哪些曲线',
+    'EXITS="',
+    exitLines,
+    '"',
+    '',
+    '# ---------------- 内网 ----------------',
+    '# CIDR 形式，空格分隔可写多个网段；掩码不限 /24，/8 /16 /22 /25 /32 都行。',
+    '# 留空 = 自动识别（优先读 UCI 的 lan 接口，回落 br-lan 的实际地址）。',
+    'LAN_NETS="' + oneLine($('lanNets').value) + '"',
+    '',
+    '# ---------------- 监测目标 ----------------',
+    'ICMP_TARGETS="' + oneLine($('icmpTargets').value) + '"',
+    'HTTP_TARGETS="' + oneLine($('httpTargets').value) + '"',
+    'ICMP6_TARGETS="' + oneLine($('icmp6Targets').value) + '"',
+    '',
+    '# ---------------- 采集参数 ----------------',
+    'PING_COUNT=' + num('pingCount', '3'),
+    'CURL_TIMEOUT=' + num('curlTimeout', '4'),
+    'KEEP_LINES=' + num('keepLines', '1440'),
+    'PUBLIC_DNS=' + num('publicDns', '223.5.5.5'),
+    'INTERVAL_MONITOR=' + num('intervalMonitor', '60'),
+    'INTERVAL_TCP=' + num('intervalTcp', '5'),
+    '',
+    '# ---------------- 看板统计表配色阈值 ----------------',
+    'STAT_MAX_WARN=' + num('statMaxWarn', '300'),
+    'STAT_MAX_BAD=' + num('statMaxBad', '1000'),
+    'STAT_SD_WARN=' + num('statSdWarn', '50'),
+    'STAT_SD_BAD=' + num('statSdBad', '200'),
+    '',
+    '# ---------------- 异常推送（Webhook）----------------',
+    '# 判定逻辑和去抖在 /usr/bin/lm_alert.sh。',
+    '# 手工验证：  /usr/bin/lm_alert.sh --test     立刻发一条测试消息',
+    '#             /usr/bin/lm_alert.sh --status   看各目标当前是正常还是已告警',
+    '',
+    '# 总开关。0 = 只采集不推送。',
+    'ALERT_ENABLE=' + (switchOn('alertEnable') ? '1' : '0'),
+    '',
+    '# 推送类型：json / wecom / dingtalk / feishu / serverchan / bark / telegram',
+    'ALERT_TYPE="' + $('alertType').value + '"',
+    'ALERT_URL="' + $('alertUrl').value.trim() + '"',
+    'ALERT_TOKEN="' + $('alertToken').value.trim() + '"',
+    '',
+    '# 单次延迟超过这个值（毫秒）算异常。留空则不看延迟。',
+    'ALERT_MAX_MS=' + $('alertMaxMs').value.trim(),
+    '',
+    '# 连续几次异常才推第一条；一直没恢复时隔多少秒再提醒一次（0 = 只在首次和恢复时推）。',
+    'ALERT_DEBOUNCE=' + num('alertDebounce', '3'),
+    'ALERT_COOLDOWN=' + num('alertCooldown', '1800'),
+    '',
+    '# 恢复正常时是否推一条「已恢复」。',
+    'ALERT_RECOVER=' + (switchOn('alertRecover') ? '1' : '0'),
+    '',
+    '# 监测范围：v4 / v6 / all',
+    'ALERT_SCOPE="' + $('alertScope').value + '"',
+    '',
+    '# 额外忽略的目标，空格分隔。可以写目标名（微信）、出口名（eth1）或整键（eth1|微信）。',
+    'ALERT_IGNORE="' + $('alertIgnore').value.trim() + '"',
+    ''
+  ].join('\n');
+}
+function renderPreview() { $('preview').textContent = buildConf(); }
+
+// ---------- 保存 ----------
+async function saveConf() {
+  const text = buildConf();
+  setStatus('保存中…');
+  try {
+    const r = await fetch(CGI, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: text
+    });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || '未知错误');
+    setStatus('已保存，' + j.bytes + ' 字节。看板刷新后生效（延迟曲线最多等一个采集周期）。', 'lm-ok');
+  } catch (e) {
+    setStatus('保存失败：' + e.message, 'lm-bad');
+  }
+}
+
+// ---------- 测试推送 ----------
+async function testAlert() {
+  setTestStatus('发送中…', 'lm-pending');
+  try {
+    const r = await fetch(CGI + '?alerttest', { cache: 'no-store' });
+    const t = (await r.text()).trim();
+    setTestStatus(t || '已发出（路由器的 lm_alert.sh 没有回话）', r.ok ? 'lm-ok' : 'lm-bad');
+  } catch (e) {
+    setTestStatus('请求失败：' + e.message, 'lm-bad');
+  }
+}
+
+// ---------- 绑定 ----------
+document.querySelectorAll('input, textarea, select').forEach(el => el.addEventListener('input', renderPreview));
+$('alertType').addEventListener('change', () => { renderAlertHint(); renderPreview(); });
+$('cfgTabs').addEventListener('click', ev => {
+  const tab = ev.target.closest('.ant-tabs-tab');
+  if (tab) switchTab(tab.dataset.tab);
+});
+$('addExit').addEventListener('click', () => { addExitRow(); renderPreview(); });
+$('saveBtn').addEventListener('click', saveConf);
+$('reloadBtn').addEventListener('click', loadConf);
+$('alertTest').addEventListener('click', testAlert);
+bindSwitch('alertEnable',  'alertEnableText',  '开启 — 异常时推送', '关闭 — 只采集，不推送');
+bindSwitch('alertRecover', 'alertRecoverText', '推送「已恢复」',   '不推送');
+
+loadConf();
+loadIfaces();
+</script>
+</body>
+</html>

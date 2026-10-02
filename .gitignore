@@ -1,0 +1,38 @@
+# ── 构建产物 ────────────────────────────────────────────────
+# 看板前端：源码在 web/src，产物由 CI（或本机 npm run build）生成，
+# 再铺到 deploy/www/lm/app/。两者都不入库。
+web/node_modules/
+web/dist/
+deploy/www/lm/app/
+
+# 旧版看板的第三方库（antd v4 预编译 CSS + Chart.js 等），
+# 由 tools/fetch-vendor.sh 从 npm 拉取，不入库。
+deploy/www/lm/lib/
+
+# ── 打包 / 临时 ─────────────────────────────────────────────
+*.tar
+*.tgz
+*.tar.gz
+*.zip
+*.log
+
+# ── 本机环境 ────────────────────────────────────────────────
+.dsh/
+.vscode/
+.idea/
+page.html
+
+# ── 含凭据的本地文件 ────────────────────────────────────────
+# 这些只在路由器上存在，绝不入库
+**/smstrun-feishu.conf
+**/smstrun.conf
+**/smstrun-AK68.conf
+**/tailscaled.state
+**/.ssh/
+*.pem
+*.key
+
+# ── OS ─────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini

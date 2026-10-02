@@ -1,0 +1,27 @@
+{
+	"admin/services/linemon": {
+		"title": "线路监测",
+		"order": 60,
+		"action": {
+			"type": "firstchild"
+		}
+	},
+
+	"admin/services/linemon/status": {
+		"title": "延迟看板",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "linemon/status"
+		}
+	},
+
+	"admin/services/linemon/config": {
+		"title": "监测设置",
+		"order": 2,
+		"action": {
+			"type": "view",
+			"path": "linemon/config"
+		}
+	}
+}

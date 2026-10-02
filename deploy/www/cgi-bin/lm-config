@@ -1,0 +1,104 @@
+#!/bin/sh
+# lm-config — 线路监测配置页的后端
+#   GET  /cgi-bin/lm-config            -> 原样返回 /etc/line-monitor/targets.conf
+#   GET  /cgi-bin/lm-config?ifaces     -> 返回本机接口列表（配置页的「接口名」下拉用）
+#   POST /cgi-bin/lm-config            -> 把请求体原样写成新的 targets.conf，并刷新 config.json
+#
+# 请求体是纯文本（不是 form-urlencoded），所以不需要解析，直接落盘。
+# 不在这儿校验语法：采集脚本自己会 . 这个文件，写坏了下次采集会读不到出口，
+# 页面上的「恢复默认」和路由器上的备份是兜底。
+
+CONF=/etc/line-monitor/targets.conf
+
+# ---- 接口列表 ----
+# 用 `ip -o link show` 拿全部接口名（含还没拿到地址的），再用 `ip -o -4 addr show`
+# 补上 IPv4 地址。两者用分隔行拼成一路喂给 awk，避免开临时文件。
+list_ifaces() {
+    printf 'Content-Type: application/json; charset=utf-8\r\n\r\n'
+    {
+        ip -o link show 2>/dev/null
+        echo '@@ADDR@@'
+        ip -o -4 addr show 2>/dev/null
+    } | awk '
+        /^@@ADDR@@$/ { addr_phase = 1; next }
+
+        !addr_phase {
+            # 2: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 ...
+            if ($1 !~ /^[0-9]+:$/) next
+            name = $2
+            sub(/:$/, "", name)
+            sub(/@.*$/, "", name)
+            if (name == "" || name == "lo") next
+            up = (index($0, "<") > 0 && $0 ~ /UP/)
+            state[name] = up ? "up" : "down"
+            if (!(name in seen)) { seen[name] = 1; order[++n] = name }
+            next
+        }
+
+        addr_phase {
+            # 2: eth1    inet 192.168.8.114/24 brd ... scope global eth1
+            if ($3 != "inet") next
+            name = $2
+            sub(/@.*$/, "", name)
+            if (name == "" || name == "lo") next
+            a = $4
+            sub(/\/.*$/, "", a)
+            ip4[name] = a
+            if (!(name in seen)) { seen[name] = 1; order[++n] = name }
+            next
+        }
+
+        END {
+            printf "["
+            for (i = 1; i <= n; i++) {
+                nm = order[i]
+                if (i > 1) printf ","
+                printf "{\"name\":\"%s\",\"state\":\"%s\",\"addr\":\"%s\"}", nm, (state[nm] ? state[nm] : "unknown"), (nm in ip4 ? ip4[nm] : "")
+            }
+            printf "]\n"
+        }
+    '
+}
+
+if [ "$REQUEST_METHOD" = "POST" ]; then
+    len=${CONTENT_LENGTH:-0}
+    if [ "$len" -le 0 ] 2>/dev/null; then
+        printf 'Content-Type: application/json; charset=utf-8\r\n\r\n'
+        printf '{"ok":false,"error":"empty body"}\n'
+        exit 0
+    fi
+
+    # 先写临时文件再原子替换，避免写一半被采集脚本读到
+    if dd bs=1 count="$len" 2>/dev/null > "$CONF.tmp"; then
+        mkdir -p /etc/line-monitor
+        cp -f "$CONF" "$CONF.bak" 2>/dev/null
+        mv "$CONF.tmp" "$CONF"
+        # 立刻同步给看板，不用等下一个采集周期
+        [ -x /usr/bin/lm_config_json.sh ] && /usr/bin/lm_config_json.sh
+        printf 'Content-Type: application/json; charset=utf-8\r\n\r\n'
+        printf '{"ok":true,"bytes":%s}\n' "$len"
+    else
+        rm -f "$CONF.tmp"
+        printf 'Content-Type: application/json; charset=utf-8\r\n\r\n'
+        printf '{"ok":false,"error":"write failed"}\n'
+    fi
+elif [ "$QUERY_STRING" = "ifaces" ]; then
+    list_ifaces
+elif [ "$QUERY_STRING" = "alerttest" ]; then
+    # 沿用刚保存到 targets.conf 的告警配置发一条测试消息。
+    # 读的是磁盘上的配置，所以页面上改完必须点「保存并生效」再来测。
+    printf 'Content-Type: text/plain; charset=utf-8\r\n\r\n'
+    if [ -x /usr/bin/lm_alert.sh ]; then
+        /usr/bin/lm_alert.sh --test 2>&1
+    else
+        printf '找不到 /usr/bin/lm_alert.sh\n'
+    fi
+else
+    if [ -f "$CONF" ]; then
+        printf 'Content-Type: text/plain; charset=utf-8\r\n\r\n'
+        cat "$CONF"
+    else
+        printf 'Content-Type: text/plain; charset=utf-8\r\n\r\n'
+        printf '# 配置文件不存在：%s\n' "$CONF"
+    fi
+fi

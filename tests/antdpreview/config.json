@@ -1,0 +1,1 @@
+{"title":"线路质量监测看板","subtitle":"移动蜂窝 eth1 + 电信 pppoe-wan2 + IPv6","lan_nets":"192.168.66.1/255.255.255.0","exits":[{"if":"eth1","label":"移动","type":"both"},{"if":"pppoe-wan2","label":"电信","type":"both"}],"targets_v4":["阿里DNS","腾讯DNS","CNNIC","微信","淘宝","B站","抖音","QQ"],"targets_v6":["阿里v6","腾讯v6","移动v6"],"th_max_warn":300,"th_max_bad":1000,"th_sd_warn":50,"th_sd_bad":200}

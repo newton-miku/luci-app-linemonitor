@@ -1,0 +1,11 @@
+{
+	"luci-app-linemon": {
+		"description": "Grant access to the line monitor dashboard",
+		"read": {
+			"ubus": {
+				"session": [ "access", "login" ]
+			}
+		},
+		"write": {}
+	}
+}

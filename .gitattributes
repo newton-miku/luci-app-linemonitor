@@ -1,0 +1,27 @@
+# 路由器上的 shell / Lua / Python / 配置必须是 LF。
+# Windows 上 edit / git 默认会把文本转成 CRLF，那会让 shebang 和
+# `case "$x" in` 之类的东西在 busybox 下直接报错（`\r` 被当成命令名的一部分），
+# 所以这里强制层。
+*.sh            text eol=lf
+*.lua           text eol=lf
+*.py            text eol=lf
+*.conf          text eol=lf
+*.json          text eol=lf
+*.htm           text eol=lf
+*.html          text eol=lf
+*.js            text eol=lf
+*.jsx           text eol=lf
+*.css           text eol=lf
+
+# 这些是 shell 脚本但没有 .sh 后缀
+deploy/www/cgi-bin/lm-config  text eol=lf
+deploy/www/cgi-bin/lm-rate    text eol=lf
+deploy/install.sh             text eol=lf
+deploy-cell/install.sh        text eol=lf
+
+# 图片等二进制别乱动
+*.png           binary
+*.jpg           binary
+*.ico           binary
+*.gz            binary
+*.snapshot      binary

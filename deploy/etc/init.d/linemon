@@ -1,0 +1,20 @@
+#!/bin/sh /etc/rc.common
+# linemon — 线路监测守护进程（OpenWrt procd 服务）
+# 用法: /etc/init.d/linemon {start|stop|restart|status}
+#
+# 用 procd 而不是 PID 文件管理：respawn 让 line_daemon.sh 意外退出时自动拉起，
+# 监测不会因为一次崩溃就静默中断。
+
+START=99
+STOP=10
+USE_PROCD=1
+
+start_service() {
+    mkdir -p /www/lm
+    procd_open_instance
+    procd_set_param command /usr/bin/line_daemon.sh
+    procd_set_param respawn 3600 5 5
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}

@@ -1,0 +1,157 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 构建看板并组装部署包
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── 1. 语法体检（不依赖 node_modules，先跑，快） ──────────────
+      - name: 检查 shell 脚本语法
+        run: |
+          set -e
+          fail=0
+          for f in $(find deploy deploy-cell tools -name '*.sh' -o -name 'lm-config' -o -name 'lm-rate' | sort); do
+            if ! sh -n "$f" 2>/dev/null; then
+              echo "::error file=$f::sh -n 失败"
+              sh -n "$f" || true
+              fail=1
+            fi
+          done
+          echo "检查了 $(find deploy deploy-cell tools -name '*.sh' | wc -l) 个脚本"
+          exit $fail
+
+      - name: 检查 Lua / Python 语法
+        run: |
+          set -e
+          if command -v luac >/dev/null; then
+            find deploy deploy-cell -name '*.lua' -print0 | xargs -0 -r -n1 luac -p
+          else
+            echo "跳过 Lua（无 luac）"
+          fi
+          find deploy-cell -name '*.py' -print0 | xargs -0 -r -n1 python3 -m py_compile
+
+      - name: 检查内联 JS 语法
+        run: |
+          # deploy/www/lm/*.html 里的内联 script 用 node --check 逐个过一遍
+          for f in deploy/www/lm/line.html deploy/www/lm/config.html; do
+            [ -f "$f" ] || continue
+            node tools/check-inline-js.js "$f"
+          done
+
+      # ── 2. 构建新版看板 ──────────────────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 安装前端依赖
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+
+      - name: 构建看板
+        working-directory: web
+        run: npm run build
+
+      - name: 铺产物到 deploy/www/lm/app
+        run: |
+          rm -rf deploy/www/lm/app
+          mkdir -p deploy/www/lm/app
+          cp -r web/dist/. deploy/www/lm/app/
+          echo "产物："
+          find deploy/www/lm/app -type f -printf '%10s  %p\n' | sort -k2
+
+      # ── 3. 拉旧版看板的第三方库 ──────────────────────────────────
+      - name: 拉取旧版看板依赖
+        run: sh tools/fetch-vendor.sh
+
+      # ── 4. 组装部署包 ────────────────────────────────────────────
+      - name: 打包
+        run: |
+          set -e
+          name="linemon-${GITHUB_REF_NAME//\//-}"
+          [ "$name" = "linemon-" ] && name="linemon-${GITHUB_SHA::8}"
+          mkdir -p out
+          tar -czf "out/${name}.tar.gz" deploy deploy-cell tools tests README.md LICENSE
+          echo "NAME=$name" >> "$GITHUB_ENV"
+          echo "=== 包内容 ==="
+          tar -tzf "out/${name}.tar.gz" | head -40
+          echo "..."
+          echo "总计 $(tar -tzf "out/${name}.tar.gz" | wc -l) 项，$(du -h "out/${name}.tar.gz" | cut -f1)"
+
+      - name: 校验包内关键文件齐全
+        run: |
+          set -e
+          f="out/${NAME}.tar.gz"
+          must="deploy/install.sh
+          deploy/usr/bin/line_monitor.sh
+          deploy/usr/bin/line_daemon.sh
+          deploy/usr/bin/lm_alert.sh
+          deploy/usr/bin/lm_rate.sh
+          deploy/usr/bin/lm_config_json.sh
+          deploy/usr/bin/tcp_stream.sh
+          deploy/etc/line-monitor/targets.conf
+          deploy/etc/init.d/linemon
+          deploy/www/lm/app/index.html
+          deploy/www/lm/line.html
+          deploy/www/lm/config.html
+          deploy/www/cgi-bin/lm-config
+          deploy/www/cgi-bin/lm-rate
+          deploy/www/luci-static/resources/view/linemon/status.js
+          deploy/www/luci-static/resources/view/linemon/config.js
+          deploy/usr/share/luci/menu.d/luci-app-linemon.json
+          deploy/usr/share/rpcd/acl.d/luci-app-linemon.json"
+          rc=0
+          for m in $must; do
+            if ! tar -tzf "$f" | grep -qx "$m"; then
+              echo "::error::包内缺少 $m"
+              rc=1
+            fi
+          done
+          [ $rc -eq 0 ] && echo "关键文件齐全（$(echo "$must" | wc -l) 项）"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: out/${{ env.NAME }}.tar.gz
+          retention-days: 30
+
+      # ── 5. 打 tag 时发 Release ───────────────────────────────────
+      - name: 发布 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/${{ env.NAME }}.tar.gz
+          generate_release_notes: true
+          body: |
+            ## 安装
+
+            ```sh
+            # 路由器上（解包后跑 install.sh）
+            wget -O /tmp/lm.tar.gz <本页附件地址>
+            mkdir -p /tmp/lm && tar -xzf /tmp/lm.tar.gz -C /tmp/lm
+            sh /tmp/lm/deploy/install.sh
+            ```
+
+            内置蜂窝短信转飞书那套（可选）：
+
+            ```sh
+            FEISHU_URL='https://open.feishu.cn/open-apis/bot/v2/hook/你的hook' \
+              sh /tmp/lm/deploy-cell/install.sh
+            ```
+
+            装完在 LuCI 侧栏「服务选项 → 线路监测」里看看板。
+            详细说明见 [README](README.md)。

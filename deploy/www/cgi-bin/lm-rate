@@ -1,0 +1,18 @@
+#!/bin/sh
+# lm-rate — 实时速率的后端。原样返回 /tmp/lm_rate.json（由 lm_rate.sh 每 INTERVAL_RATE 秒刷新）。
+#
+# 文件在 RAM 里（/tmp），所以每次请求都是热数据，也不会磨 flash。
+# 加 no-store 是因为它本来就是个秒级快照，缓存了反而看到旧数字。
+
+OUT=/tmp/lm_rate.json
+
+printf 'Content-Type: application/json; charset=utf-8\r\n'
+printf 'Cache-Control: no-store\r\n'
+printf '\r\n'
+
+if [ -f "$OUT" ]; then
+    cat "$OUT"
+else
+    # 采集还没跑过一轮（刚装好 / 刚重启），给个空壳免得前端报错
+    printf '{"ts":0,"rates":[]}\n'
+fi

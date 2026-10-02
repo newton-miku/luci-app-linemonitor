@@ -1,0 +1,94 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #000;
+  /* 原生控件（select 展开的 option、滚动条）也画成深色 */
+  color-scheme: dark;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* 它跑在 LuCI 的 iframe 里，外层已经有侧栏和顶栏，
+   所以这里只做「内容区」，不做 ProLayout 的整页框架 */
+.lm-pc {
+  padding: 24px 24px 56px;
+}
+
+.lm-updated {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+}
+
+.lm-note {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.lm-chart-box {
+  height: 340px;
+}
+
+.lm-spark-box {
+  height: 80px;
+}
+
+/* 统计表里的数字列与阈值配色 */
+.lm-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.lm-num.lm-warn {
+  color: #d89614;
+}
+
+.lm-num.lm-bad {
+  color: #dc4446;
+}
+
+.lm-group {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 实时速率：自适应网格，每格是「接口名 + 下行 + 上行」 */
+.lm-rate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.lm-rate-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #1f1f1f;
+  border: 1px solid #303030;
+  border-radius: 8px;
+}
+
+.lm-rate-if {
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+}
+
+.lm-rate-val {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+
+.lm-rate-rx {
+  color: #5b8ff9;
+}
+
+.lm-rate-tx {
+  color: #5ad8a6;
+}
+

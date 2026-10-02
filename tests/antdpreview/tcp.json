@@ -1,0 +1,13 @@
+{
+  "ts": 1790000000,
+  "streams": [
+    { "client": "192.168.66.24", "sport": "51422", "dst": "110.242.68.66", "dport": "443", "iface": "eth1", "service": "百度", "state": "ESTABLISHED" },
+    { "client": "192.168.66.24", "sport": "51430", "dst": "203.119.169.11", "dport": "443", "iface": "pppoe-wan2", "service": "淘宝", "state": "ESTABLISHED" },
+    { "client": "192.168.66.31", "sport": "40218", "dst": "99.86.20.11", "dport": "443", "iface": "eth1", "service": "其他", "state": "SYN_SENT" },
+    { "client": "192.168.66.31", "sport": "40244", "dst": "101.91.36.99", "dport": "8080", "iface": "pppoe-wan2", "service": "其他", "state": "SYN_SENT" },
+    { "client": "192.168.66.55", "sport": "33120", "dst": "223.5.5.5", "dport": "53", "iface": "eth1", "service": "阿里DNS", "state": "ESTABLISHED" },
+    { "client": "192.168.66.55", "sport": "33124", "dst": "119.29.29.29", "dport": "53", "iface": "未知", "service": "腾讯DNS", "state": "TIME_WAIT" },
+    { "client": "192.168.66.77", "sport": "51888", "dst": "240e:946:3003:1::1", "dport": "443", "iface": "pppoe-wan2", "service": "腾讯v6", "state": "ESTABLISHED" },
+    { "client": "192.168.66.77", "sport": "51890", "dst": "2408:8001:3001::1", "dport": "80", "iface": "eth1", "service": "其他", "state": "SYN_SENT" }
+  ]
+}

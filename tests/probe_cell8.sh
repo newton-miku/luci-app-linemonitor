@@ -1,0 +1,1 @@
+cat /etc/init.d/modeminit

@@ -15,7 +15,7 @@ FEISHU_URL="${FEISHU_URL:-}"
 echo "==> 备份原有文件到 /root/cell-sms-backup/"
 mkdir -p /root/cell-sms-backup
 # 只在还没有备份时备份，避免把「已被 patch 过的版本」当成原件覆盖掉
-for f in /usr/bin/smstrun.py /etc/init.d/modeminit /usr/lib/lua/luci/model/cbi/modem.lua; do
+for f in /usr/bin/smstrun.py /usr/bin/smstrun.sh /etc/init.d/modeminit /usr/lib/lua/luci/model/cbi/modem.lua; do
     bak="/root/cell-sms-backup/$(basename "$f").bak"
     if [ -f "$f" ] && [ ! -f "$bak" ]; then
         cp "$f" "$bak" && echo "    $f -> $bak"
@@ -24,9 +24,16 @@ for f in /usr/bin/smstrun.py /etc/init.d/modeminit /usr/lib/lua/luci/model/cbi/m
     fi
 done
 
-echo "==> 安装 smstrun.py（支持飞书 / PPS+ 双后端）"
+echo "==> 安装 smstrun.py（支持飞书 / PPS+ 双后端 + 长短信分段合并）"
 cp "$SRC/usr/bin/smstrun.py" /usr/bin/smstrun.py
 chmod +x /usr/bin/smstrun.py
+
+# smstrun.sh 也必须换：原厂版本用 `AT+CMGL=0` 只列未读短信，而本模组收到新短信
+# 之后立刻就是 REC READ 状态，于是原厂脚本恒读到空、转发链路永远不触发。
+echo "==> 安装 smstrun.sh（原厂版恒读到空，必须替换）"
+cp "$SRC/usr/bin/smstrun.sh" /usr/bin/smstrun.sh
+chmod +x /usr/bin/smstrun.sh
+
 cp "$SRC/usr/bin/smstrun-restart.sh" /usr/bin/smstrun-restart.sh
 chmod +x /usr/bin/smstrun-restart.sh
 cp "$SRC/usr/bin/patch-modem-lua.py" /usr/bin/patch-modem-lua.py

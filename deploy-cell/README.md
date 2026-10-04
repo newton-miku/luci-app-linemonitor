@@ -4,6 +4,8 @@
 
 原链路完全不动，只是把 `smstrun.py` 换成**双后端**版本：配了飞书就推飞书，没配就照旧推 PPS+。
 
+`smstrun.sh` 同样要换（原因见下面「原固件的三个 bug」），否则短信永远读不出来。
+
 ---
 
 ## 背景：PPS+ 到底是什么
@@ -14,7 +16,46 @@
   `wechat_webhook = section:taboption("WEBUI", Value, "wechat_webhook", "PPS+平台转发Token", "Token申请请微信搜索公众号“pushplus推送加”…")`。
 - 实际转发链路是 `/etc/init.d/modeminit` 拉起 `python3 /usr/bin/smstrun.py`，后者循环调用 `/usr/bin/smstrun.sh`（AT+CMGL 读短信 → PDU 解码 → 输出到 `/tmp/smstrunt.at`），发现新短信就 `requests.post("http://www.pushplus.plus/send", json={token, title, content})`。
 
-**顺带发现的原固件 bug**：全固件没有任何代码把 uci 里的 `wechat_webhook` 写进 `/usr/bin/smstrun.conf`，而 `smstrun.py` 启动时读不到该文件就直接打印「未找到配置文件，程序已退出！」并退出。所以这台路由器的短信转发**其实一直是断的**。本次一并修好。
+---
+
+## 原固件的三个 bug
+
+前两个会让链路**完全不通**，第三个是本次一并修好的体验问题。
+
+### ① 短信读不出来（致命）
+
+原厂 `smstrun.sh` 用 `AT+CMGL=0`，只列**未读**短信。但本模组（`+CNMI: 2,1,0,2,0`，`+CPMS: "ME",11,300`）收到短信落进 ME 之后**立刻就是 `REC READ` 状态**，于是 `AT+CMGL=0` 恒空，`smstrun.py` 里的 `if "发件人" in out:` 永远不成立。实测：
+
+```
+sendat 1 AT+CMGL=0   →  6 字节（只有 OK）
+sendat 1 AT+CMGL=4   →  3741 字节，8 条短信，stat 全为 1（REC READ）
+```
+
+表现为 `/tmp/smstrun.log` 刷满「未检测到新消息，继续检测...」而飞书一条都收不到。
+
+新版改用 `AT+CMGL=4`，并做两件事：滤掉混在应答里的 `^PDCPDATAINFO` 之类 URC（`grep -v '^\^'`）；用「发件人 + 发件时间」做指纹记在 `/etc/smstrun-seen.conf`，只输出没推过的（**持久路径**，放 `/tmp` 的话每次重启都要重推全部存量短信）。
+
+> 副作用（预期内）：第一次跑会把存储里既有的短信全部推一次。删掉 `/etc/smstrun-seen.conf` 再重启即可重置。
+
+### ② uci 里的 token 没人写进去
+
+全固件没有任何代码把 uci 的 `wechat_webhook` 写进 `/usr/bin/smstrun.conf`，而 `smstrun.py` 启动时读不到该文件就直接打印「未找到配置文件，程序已退出！」并退出。所以这台路由器的短信转发**其实一直是断的**。本次一并修好。
+
+### ③ 长短信被拆成碎片推送
+
+一条超长短信（比如运营商的卡券提醒）会被模组分 2~3 段存，`AT+CMGL=4` 逐条列出，`pdu_decoder` 也逐条解码，于是原厂脚本**一段推一次**，收到的消息是「MB（编号：25JT…），资费0元」「即生效，24小时后自动失效」这种半截话。
+
+内置蜂窝的 Web 页面（`/usr/share/modem/smsc.sh`）其实也是这么逐条显示的，但**推送**场景下必须拼完整。新版在 `smstrun.py` 里按「发件人 + `Reference number`」归组（没有 ref 就退回「发件人 + 发件时间」），攒齐所有段之后按段号排序首尾相接，**推一条完整消息**。
+
+```
+第4条短信
+发件人:106589666300
+发件时间:10/03/26 17:31:56
+（长短信 3 段已完整拼接）
+【中国移动】100MB流量日包已到账，MB（编号：25JT206613），资费0元即生效，24小时后自动失效。
+```
+
+跨轮次攒段：3 段短信可能分两次采集才到齐，没齐就继续等（`/tmp/smstrun.log` 会打印「长短信分段未齐：发件人… 已收到 2/3 段，继续等待。」）。攒不齐的（比如模组已把更早的段清掉）超过 30 分钟就按现有内容推出，文案会标「只收到 2 段」，不会一直卡着不发。
 
 ---
 
@@ -31,8 +72,8 @@ ssh root@192.168.66.1 "rm -rf /tmp/lmc && mkdir -p /tmp/lmc && tar -xf /tmp/lmce
 
 install.sh 会做四件事：
 
-1. 备份 `/usr/bin/smstrun.py`、`/etc/init.d/modeminit`、`/usr/lib/lua/luci/model/cbi/modem.lua` 到 `/root/cell-sms-backup/`（**只在备份不存在时备份**，避免二次安装把已 patch 的版本当原件覆盖）。
-2. 装新版 `smstrun.py`（双后端）+ `smstrun-restart.sh` + `patch-modem-lua.py`。
+1. 备份 `/usr/bin/smstrun.py`、`/usr/bin/smstrun.sh`、`/etc/init.d/modeminit`、`/usr/lib/lua/luci/model/cbi/modem.lua` 到 `/root/cell-sms-backup/`（**只在备份不存在时备份**，避免二次安装把已 patch 的版本当原件覆盖）。
+2. 装新版 `smstrun.py`（双后端 + 合并分段）、`smstrun.sh`（修读取）、`smstrun-restart.sh`、`patch-modem-lua.py`。
 3. 跑 `patch-modem-lua.py` 给 CBI 加输入框，然后 `/etc/init.d/uhttpd restart`。
 4. 杀掉旧的 `smstrun.py`、清 `/tmp/smstrun.lock`、重新 `nohup` 拉起。
 
@@ -114,6 +155,8 @@ search <tailnet>.ts.net <你的搜索域>
 
 ```sh
 cp /root/cell-sms-backup/smstrun.py.bak /usr/bin/smstrun.py
+cp /root/cell-sms-backup/smstrun.sh.bak /usr/bin/smstrun.sh
+chmod +x /usr/bin/smstrun.sh
 cp /root/cell-sms-backup/modem.lua.bak /usr/lib/lua/luci/model/cbi/modem.lua
 cp /root/cell-sms-backup/modeminit.bak /etc/init.d/modeminit
 rm -f /usr/bin/smstrun-feishu.conf
@@ -122,6 +165,8 @@ sh /usr/bin/smstrun-restart.sh
 ```
 
 注意 `modem.lua.bak` 若是早期版本 install.sh 覆盖产生的，会是**已 patch 过的内容**，回滚时需人工确认。
+
+回滚到原厂 `smstrun.sh` 等于把 bug ① 也退回去了（短信会重新读不出来），一般不值得。
 
 ---
 
@@ -134,3 +179,8 @@ sh /usr/bin/smstrun-restart.sh
 5. **hosts 兜底条目要先清后试**，理由见上一节。
 6. **备份不能无条件覆盖**，否则第二次安装会把「已 patch 的 modem.lua」当成原件存进备份。
 7. **后台启动一律带重定向**。`os.execute("nohup python3 /usr/bin/smstrun.py >/tmp/smstrun.log 2>&1 &")` 里那段重定向不能省——`os.execute` 是同步等待的，子进程持有 stdout 管道会让 Lua 侧悬住。
+8. **`pdu_decoder` 读到换行才返回**。原厂脚本用 `echo "${pdu}" | pdu_decoder`（带换行）所以正常；写成 `printf '%s' "$line" | pdu_decoder` 会让整个脚本永久卡在 `read` 上（`ps` 里能同时看到 3 个 `sh /usr/bin/smstrun.sh` 加一个处于 R 状态的 `pdu_decoder`）。一定要用 `echo`。
+9. **`subprocess.run` 必须加 timeout**。`smstrun.sh` 里有 `sendat` 和 `pdu_decoder`，两者都可能卡住；不设上限的话 Python 那层的 `while True` 会永久阻塞、再也收不到短信。现在是 45 秒。
+10. **stdout 全缓冲让日志长期为空**。`nohup python3 foo.py` 的 stdout 是块缓冲的，`print` 的内容要攒满 4~8 KB 才落盘，于是 `/tmp/smstrun.log` 长时间空白、攒段过程完全不可观测。开头加 `sys.stdout.reconfigure(line_buffering=True)`（Python 3.7+；3.6 用 `PYTHONUNBUFFERED=1`）。
+11. **合并逻辑放在 Python 侧，别在 shell 里做**。分段 SMS 的 `Reference number` / `SMS segment N of M` 解析、跨轮次攒段、超时兜底，这些在 awk 里要写一大摊；`smstrun.py` 那边 `splitlines()` + 正则几行就完了。
+12. **「还没拼齐」必须返回空串**。`smstrun.py` 靠 `"发件人" in out` 判断要不要推送，合并函数如果没攒齐就把原始碎片回传，等于把半截消息又推出去了——这正是要修的问题本身。

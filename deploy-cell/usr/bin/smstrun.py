@@ -2,10 +2,18 @@ import json
 import os
 import re
 import socket
+import sys
 import time
 import requests
 import subprocess
 from datetime import datetime
+
+# nohup 启动时 stdout 是全缓冲的，print 的内容要攒满 4~8 KB 才落盘，
+# 于是 /tmp/smstrun.log 长时间是空的、攒段过程完全看不到。改成行缓冲。
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
 
 # 飞书自定义机器人 webhook。填了这个文件就推飞书，不再推 PPS+；
 # 两者都填时飞书优先（用户要的是「替代」）。
@@ -170,6 +178,120 @@ def push_pushplus(message, token, title):
         return False
 
 
+def parse_blocks(out):
+    """把 smstrun.sh 的输出切成一条条短信。
+
+    每个块长这样（块之间用一串横线分隔）：
+        第2条短信
+        发件人:1065896652061002
+        发件时间:10/03/26 17:31:45
+        Reference number: 14
+        SMS segment 1 of 2
+        正文第一段
+        ------------------------------------------------------
+    """
+    blocks = []
+    cur = None
+    for raw in out.splitlines():
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        if line.startswith('第') and line.endswith('条短信'):
+            # 只留数字，别把「第2条短信」整个当标题，最后拼出来会是「第第2条短信条短信」
+            m = re.search(r'(\d+)', line)
+            cur = {'idx': m.group(1) if m else '?', 'body': []}
+            continue
+        if set(line) == {'-'}:
+            if cur:
+                blocks.append(cur)
+            cur = None
+            continue
+        if cur is None:
+            continue
+        if line.startswith('发件人:'):
+            cur['from'] = line[len('发件人:'):].strip()
+        elif line.startswith('发件时间:'):
+            cur['time'] = line[len('发件时间:'):].strip()
+        elif line.startswith('Reference number:'):
+            cur['ref'] = line.split(':', 1)[1].strip()
+        elif line.startswith('SMS segment'):
+            m = re.search(r'segment\s+(\d+)\s+of\s+(\d+)', line)
+            if m:
+                cur['seg'] = int(m.group(1))
+                cur['segs'] = int(m.group(2))
+        else:
+            cur['body'].append(line.strip())
+    if cur:
+        blocks.append(cur)
+    return blocks
+
+
+# 长短信分段缓冲：key -> {'segs': 总段数, 'parts': {段号: 正文}, 'idx': 首段序号, 'time': 发件时间}
+# 必须跨轮次保留，因为 3 段短信可能分三次采集才到齐，攒齐了再一次性推出去。
+_pending = {}
+
+
+def merge_sms(out):
+    """把长短信的多段拼成完整一条。
+
+    内置蜂窝的 web 页（/usr/share/modem/smsc.sh）其实是逐条 PDU 单独解码、直接显示的，
+    分段也是散的；这里按「发件人 + Reference number」归组（没有 ref 就退回「发件人 +
+    发件时间」），攒齐所有段之后才拼成完整一条推送，避免一条长短信被拆成三条碎片消息。
+
+    攒不齐的（长时间只到了一部分，比如模组已经清掉更早的段）超过 30 分钟就按现有内容
+    推出去并清掉缓冲，免得一直卡着不发。
+    """
+    blocks = parse_blocks(out)
+    if not blocks:
+        return out                    # 本轮没有新短信，原样返回（通常就是空串）
+
+    # 先按分组键把本轮拿到的段落并进缓冲
+    for b in blocks:
+        sender = b.get('from', '')
+        key = (sender, b['ref']) if b.get('ref') else (sender, b.get('time', ''))
+        slot = _pending.setdefault(key, {'segs': 0, 'parts': {}, 'idx': b.get('idx', '?'),
+                                         'time': b.get('time', ''), 'at': time.time()})
+        if b.get('segs'):
+            slot['segs'] = max(slot['segs'], b['segs'])
+        slot['parts'][b.get('seg', 0)] = ''.join(b['body'])
+        if not slot['time'] and b.get('time'):
+            slot['time'] = b['time']
+
+    # 组装：攒齐的立即推；没攒齐但超时的也推（按已有内容）
+    out_lines = []
+    for key in list(_pending.keys()):
+        slot = _pending[key]
+        total = slot['segs']
+        got = len(slot['parts'])
+        stale = time.time() - slot['at'] > 1800
+        if total and got < total and not stale:
+            print("长短信分段未齐：发件人%s ref=%s 已收到 %d/%d 段，继续等待。"
+                  % (key[0], key[1], got, total))
+            continue                      # 还没齐，继续等下一轮
+        if total and got < total:
+            print("长短信分段超时：发件人%s ref=%s 只收到 %d/%d 段，按现有内容推送。"
+                  % (key[0], key[1], got, total))
+        body = ''.join(slot['parts'][k] for k in sorted(slot['parts']))
+        sender = key[0]
+        lines = ['第%s条短信' % slot['idx']]
+        lines.append('发件人:%s' % sender)
+        if slot['time']:
+            lines.append('发件时间:%s' % slot['time'])
+        if total and total > 1:
+            lines.append('（长短信 %d 段%s）' % (total, '已完整拼接' if got >= total else '只收到 %d 段' % got))
+        lines.append(body)
+        lines.append('------------------------------------------------------')
+        out_lines.append('\n'.join(lines))
+        del _pending[key]
+
+    if not out_lines:
+        # 全部还差段：必须返回空串，不能把原始碎片回传。
+        # smstrun.py 是靠 "发件人" in out 判断要不要推送的，返回碎片就等于把没拼全的
+        # 分段当成完整短信推出去，正是这次要修的问题。
+        return ''
+    return '\n'.join(out_lines)
+
+
 def forward():
     if not check_lock(LOCK_FILE):
         return
@@ -191,9 +313,13 @@ def forward():
         count = 0
         while True:
             try:
+                # 45 秒上限：smstrun.sh 里有 sendat / pdu_decoder，两者都可能卡住
+                # （实测 pdu_decoder 收不到换行时会一直挂在 read 上），
+                # 不加超时的话这一层 while 循环会永久卡死、再也收不到短信。
                 result = subprocess.run(['sh', '/usr/bin/smstrun.sh'],
-                                        capture_output=True, text=True, check=True)
-                out = result.stdout
+                                        capture_output=True, text=True, check=True,
+                                        timeout=45)
+                out = merge_sms(result.stdout)
                 if "发件人" in out:
                     title = read_title()
                     if feishu_url:
@@ -206,6 +332,8 @@ def forward():
                     print("未检测到新消息，继续检测...")
             except subprocess.CalledProcessError as e:
                 print(f"执行命令失败: {e}. 返回值: {e.returncode}. 错误信息: {e.stderr}")
+            except subprocess.TimeoutExpired:
+                print("smstrun.sh 执行超过 45 秒，已跳过本轮（sendat/pdu_decoder 卡住）。")
             except UnicodeDecodeError as e:
                 print(f"解码错误: {e}. 尝试重新运行。")
             except Exception as e:

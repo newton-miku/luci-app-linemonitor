@@ -14,8 +14,9 @@ json_esc() {
     printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-# ---- 出口：接口名 -> 显示名 + 类型 ----
+# ---- 出口：接口名 -> 显示名 + 类型 + 该出口监测的目标名清单 ----
 # 看板按出口分标签页，type 决定那一页里画 v4 曲线还是 v6 曲线还是两组都画。
+# targets 是这个出口第 6 字段里声明的目标名清单，逗号分隔；空串 = 该出口测全部目标。
 elist=""
 for e in $EXITS; do
     ifn=$(echo "$e" | cut -d'|' -f1)
@@ -26,25 +27,62 @@ for e in $EXITS; do
         v4|v6) ;;
         *) typ="both" ;;
     esac
+    tgts=$(echo "$e" | cut -d'|' -f6)
+    [ "$tgts" = "*" ] && tgts=""
     [ -n "$elist" ] && elist="$elist,"
-    elist="$elist{\"if\":\"$(json_esc "$ifn")\",\"label\":\"$(json_esc "$lbl")\",\"type\":\"$typ\"}"
+    elist="$elist{\"if\":\"$(json_esc "$ifn")\",\"label\":\"$(json_esc "$lbl")\",\"type\":\"$typ\",\"targets\":\"$(json_esc "$tgts")\"}"
 done
 
-# ---- 目标名列表（看板靠它决定画哪几条曲线）----
+# ---- 哪些出口在监测这个目标 ----
+# 这是「出口侧的清单」的另一种读法，不额外存任何东西，所以两边永远一致。
+# 出口第 6 字段留空 = 全测，所以每个出口都要判一次；输出 JSON 字符串数组，顺序跟 EXITS 一致。
+# $1 = 目标名（已剥掉「分组/」前缀）
+exits_for() {
+    _out=""
+    for _e in $EXITS; do
+        _if=$(echo "$_e" | cut -d'|' -f1)
+        [ -z "$_if" ] && continue
+        _tg=$(echo "$_e" | cut -d'|' -f6)
+        if [ -z "$_tg" ] || [ "$_tg" = "*" ]; then
+            _hit=1
+        else
+            case ",$_tg," in
+                *",$1,"*) _hit=1 ;;
+                *)        _hit=0 ;;
+            esac
+        fi
+        [ "$_hit" = "1" ] || continue
+        [ -n "$_out" ] && _out="$_out,"
+        _out="$_out\"$(json_esc "$_if")\""
+    done
+    printf '[%s]' "$_out"
+}
+
+# ---- 目标列表：名字（去分组前缀）+ 分组 + 所属类别 + 哪些出口在测 ----
+# 名字里不写分组前缀，看板上就是「对端路由」而不是「内网/对端路由」；
+# 分组单独放在 grp 字段，只在统计表里当分类标签显示。
+# kind 是 icmp / http / v6，看板据此决定统计表归到哪一栏。
 jlist() {
-    # $1 = 目标串（"名字:地址 名字:地址"）
+    # $1 = 目标串（"分组/名字:地址 名字:地址"）$2 = kind
     out=""
     for t in $1; do
-        n=${t%%:*}
-        [ -z "$n" ] && continue
+        raw=${t%%:*}
+        [ -n "$raw" ] || continue
+        gp="默认"
+        case "$raw" in
+            */*) gp=${raw%%/*}; raw=${raw#*/} ;;
+        esac
+        [ -n "$raw" ] || continue
         [ -n "$out" ] && out="$out,"
-        out="$out\"$(json_esc "$n")\""
+        out="$out{\"name\":\"$(json_esc "$raw")\",\"grp\":\"$(json_esc "$gp")\",\"kind\":\"$2\",\"exits\":$(exits_for "$raw")}"
     done
     printf '%s' "$out"
 }
 
-V4_JSON=$(jlist "$ICMP_TARGETS $HTTP_TARGETS")
-V6_JSON=$(jlist "$ICMP6_TARGETS")
+V4_JSON=$(jlist "$ICMP_TARGETS" icmp)
+V4_JSON="$V4_JSON,$(jlist "$HTTP_TARGETS" http)"
+V4_JSON="${V4_JSON#,}"
+V6_JSON=$(jlist "$ICMP6_TARGETS" v6)
 
 # ---- 内网网段（看板只在 TCP 页拿它做提示文字，改动不影响过滤逻辑）----
 # 和 tcp_stream.sh 同一套自动识别顺序，保证两边看到的是同一个网段。

@@ -272,6 +272,26 @@ function exitType(e) { return (e && (e.type === 'v4' || e.type === 'v6')) ? e.ty
 const wantsV4 = e => exitType(e) !== 'v6';
 const wantsV6 = e => exitType(e) !== 'v4';
 
+// 出口监测的目标清单（targets.conf 出口行的第 6 个字段）：
+// 逗号分隔的目标名，空或 * = 全测，'-' = 一个都不测。
+// 和设置页里「出口 ↔ 目标」两侧的勾选是同一份数据，改哪边都一样。
+const TGT_NONE = '-';
+function exitTargets(e) {
+  const raw = (e && e.targets) || '';
+  if (!raw || raw === '*') return null;         // null = 不限制
+  return new Set(raw.split(',').map(s => s.trim()).filter(Boolean));
+}
+function inExitScope(e, name) {
+  const s = exitTargets(e);
+  if (!s) return true;
+  if (s.has(TGT_NONE)) return false;
+  return s.has(name);
+}
+function targetsForExit(e, fam) {
+  const list = fam === 'v6' ? V6_TARGETS : V4_TARGETS;
+  return list.filter(n => inExitScope(e, n));
+}
+
 // 标签页键：出口页统一用 'ex:<接口名>'。DOM id 会拼成 'tab-ex:eth1' 这种带冒号的
 // 形式，一律用 getElementById 取 —— 冒号在 CSS 选择器里是伪类，不能直接写。
 const tabKeyOf = iface => 'ex:' + iface;
@@ -293,7 +313,11 @@ function blockByKey(key) { return allBlocks().find(b => b.key === key) || null; 
 function blocksOfTab(tabKey) { return allBlocks().filter(b => b.tab === tabKey); }
 // 该区块画哪几个目标：v4 取 V4_TARGETS，key 是 '<接口>|<目标>'；
 // v6 取 V6_TARGETS，key 是 'v6-<接口>|<目标>'。
-function blockTargets(b) { return b.fam === 'v4' ? V4_TARGETS : V6_TARGETS; }
+// 目标按出口的监测目标清单过滤（清单为空 = 全测）。
+function blockTargets(b) {
+  const ex = EXITS.find(e => e.if === b.iface);
+  return ex ? targetsForExit(ex, b.fam) : (b.fam === 'v4' ? V4_TARGETS : V6_TARGETS);
+}
 function blockKeyPrefix(b) { return b.fam === 'v6' ? 'v6-' : ''; }
 
 // 统计表配色阈值（毫秒），由 config.json 覆盖。只有前端用，不影响采集。
@@ -337,8 +361,18 @@ async function loadConfig() {
     document.title = (cfg.title || '线路质量监测看板');
     if (cfg.subtitle) document.getElementById('dashSub').textContent = cfg.subtitle;
     if (Array.isArray(cfg.exits) && cfg.exits.length) EXITS = cfg.exits;
-    if (Array.isArray(cfg.targets_v4) && cfg.targets_v4.length) V4_TARGETS = cfg.targets_v4;
-    if (Array.isArray(cfg.targets_v6) && cfg.targets_v6.length) V6_TARGETS = cfg.targets_v6;
+    // config.json 里 targets_v4/v6 有两种历史格式：老版是字符串数组，
+    // 新版是 {name,grp,kind} 对象数组（目标支持「分组/名字」）。这里统一成对象，
+    // 分组只当统计表里的分类标签；「哪个出口测哪个目标」看出口的 targets 字段。
+    const normT = arr => (Array.isArray(arr) ? arr : [])
+      .map(t => (typeof t === 'string' ? { name: t, grp: '' } : { name: (t && t.name) || '', grp: (t && t.grp) || '' }))
+      .filter(t => t.name);
+    if (Array.isArray(cfg.targets_v4) && cfg.targets_v4.length) {
+      V4_TARGETS = normT(cfg.targets_v4).map(t => t.name);
+    }
+    if (Array.isArray(cfg.targets_v6) && cfg.targets_v6.length) {
+      V6_TARGETS = normT(cfg.targets_v6).map(t => t.name);
+    }
     if (typeof cfg.lan_nets === 'string' && cfg.lan_nets) LAN_NETS = cfg.lan_nets;
     const pos = (v, d) => (typeof v === 'number' && isFinite(v) && v > 0 ? v : d);
     TH_MAX_WARN = pos(cfg.th_max_warn, TH_MAX_WARN);
@@ -1158,8 +1192,8 @@ function statRowsFor(tabKey) {
     const rows = [];
     EXITS.forEach(e => {
       const l = labelOf(e.if);
-      if (wantsV4(e)) V4_TARGETS.forEach(t => rows.push({ group: l + ' (IPv4)', label: t, keys: e.if + '|' + t }));
-      if (wantsV6(e)) V6_TARGETS.forEach(t => rows.push({ group: l + ' (IPv6)', label: t, keys: 'v6-' + e.if + '|' + t }));
+      if (wantsV4(e)) targetsForExit(e, 'v4').forEach(t => rows.push({ group: l + ' (IPv4)', label: t, keys: e.if + '|' + t }));
+      if (wantsV6(e)) targetsForExit(e, 'v6').forEach(t => rows.push({ group: l + ' (IPv6)', label: t, keys: 'v6-' + e.if + '|' + t }));
     });
     return rows;
   }
@@ -1266,9 +1300,10 @@ function renderOverview() {
   EXITS.forEach(e => {
     const lbl = labelOf(e.if);
     if (wantsV4(e)) {
-      const vals = V4_TARGETS.map(t => lastValue(e.if + '|' + t)).filter(v => v !== null);
+      const t4 = targetsForExit(e, 'v4');
+      const vals = t4.map(t => lastValue(e.if + '|' + t)).filter(v => v !== null);
       const a = avg(vals);
-      const hasFail = V4_TARGETS.some(t => {
+      const hasFail = t4.some(t => {
         const s = histData[histData.length-1]?.series[e.if + '|' + t];
         return s && (s.value === null || Number(s.status) > 0);
       });
@@ -1281,10 +1316,11 @@ function renderOverview() {
     if (wantsV6(e)) {
       // v6 也按延迟报，跟 v4 卡片对称；没数据就是「—」而不是「不可达」，
       // 因为三种情况（真的断、目标被限速、这轮没采）从一次采样里分不出来
-      const v6vals = V6_TARGETS.map(t => lastValue('v6-' + e.if + '|' + t))
-                               .filter(v => v !== null && v !== undefined);
+      const t6 = targetsForExit(e, 'v6');
+      const v6vals = t6.map(t => lastValue('v6-' + e.if + '|' + t))
+                       .filter(v => v !== null && v !== undefined);
       const a6 = v6vals.length ? avg(v6vals) : null;
-      const fail6 = V6_TARGETS.some(t => {
+      const fail6 = t6.some(t => {
         const s = histData[histData.length-1]?.series['v6-' + e.if + '|' + t];
         return s && (s.value === null || Number(s.status) > 0);
       });
@@ -1316,7 +1352,13 @@ function renderOverview() {
   if (charts.barChart) { charts.barChart.destroy(); charts.barChart = null; }
 
   const barExits = EXITS.filter(wantsV4);
-  if (!barExits.length) {
+  // 各出口的目标集不一定相同（外网出口测公网 DNS、组网出口测对端子网），
+  // 横轴取所有出口目标的并集；某出口不监测的目标留 null（留空而不是 0，
+  // 0 会被误读成「延迟 0ms」）。
+  const labels = [];
+  barExits.forEach(e => targetsForExit(e, 'v4').forEach(t => { if (!labels.includes(t)) labels.push(t); }));
+
+  if (!barExits.length || !labels.length) {
     const box = barEl.parentNode;
     if (!box.querySelector('.lm-empty')) {
       const d = document.createElement('div');
@@ -1329,14 +1371,13 @@ function renderOverview() {
   const old = barEl.parentNode.querySelector('.lm-empty');
   if (old) old.remove();
 
-  const labels = V4_TARGETS;
   charts.barChart = new Chart(barEl, {
     type: 'bar',
     data: {
       labels,
       datasets: barExits.map((e, i) => ({
         label: labelOf(e.if),
-        data: labels.map(t => lastValue(e.if + '|' + t) ?? 0),
+        data: labels.map(t => inExitScope(e, t) ? (lastValue(e.if + '|' + t) ?? null) : null),
         backgroundColor: BAR_COLORS[i % BAR_COLORS.length]
       }))
     },
@@ -1365,11 +1406,11 @@ function renderSparks() {
     const lbl = labelOf(e.if);
     if (wantsV4(e)) defs.push({
       title: lbl + ' → 各目标', tab: tabKeyOf(e.if),
-      keys: V4_TARGETS.map(t => ({ label:t, key: e.if + '|' + t }))
+      keys: targetsForExit(e, 'v4').map(t => ({ label:t, key: e.if + '|' + t }))
     });
     if (wantsV6(e)) defs.push({
       title: lbl + 'v6 → v6 DNS', tab: tabKeyOf(e.if),
-      keys: V6_TARGETS.map(t => ({ label:t, key: 'v6-' + e.if + '|' + t }))
+      keys: targetsForExit(e, 'v6').map(t => ({ label:t, key: 'v6-' + e.if + '|' + t }))
     });
   });
   defs.forEach(def => {

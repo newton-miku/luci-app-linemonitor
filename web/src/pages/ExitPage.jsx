@@ -9,7 +9,7 @@ import LineChart from '../components/LineChart.jsx';
 import TimeAxis, { PCT } from '../components/TimeAxis.jsx';
 import StatTable from '../components/StatTable.jsx';
 import { WINDOWS, fmtFull } from '../stats.js';
-import { wantsV4, wantsV6 } from '../api.js';
+import { wantsV4, wantsV6, targetsFor } from '../api.js';
 
 function Block({ cfg, hist, label, prefix, targets, range, onRangeChange, statWin, onPickWin, rangeCustom, smooth }) {
   const [hidden, setHidden] = useState(() => new Set());
@@ -33,7 +33,7 @@ function Block({ cfg, hist, label, prefix, targets, range, onRangeChange, statWi
     onRangeChange({ min, max });
   };
 
-  const allHidden = targets.length > 0 && targets.every((t) => hidden.has(t));
+  const allHidden = targets.length > 0 && targets.every((t) => hidden.has(t.name));
 
   return (
     <ProCard
@@ -49,29 +49,30 @@ function Block({ cfg, hist, label, prefix, targets, range, onRangeChange, statWi
             onChange={(v) => onPickWin(v)}
             options={WINDOWS.map((w) => ({ label: w.label, value: w.ms }))}
           />
-          <Button size="small" onClick={() => setHidden(allHidden ? new Set() : new Set(targets))}>
+          <Button size="small" onClick={() => setHidden(allHidden ? new Set() : new Set(targets.map((t) => t.name)))}>
             {allHidden ? '全选' : '全不选'}
           </Button>
         </Space>
       }
     >
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-        {targets.map((t, i) => {
-          const key = prefix + '|' + t;
+        {targets.map((t) => {
+          const key = prefix + '|' + t.name;
           const last = hist.length ? hist[hist.length - 1].series[key] : null;
           const v = last && last.value !== null && last.value !== undefined ? Math.round(last.value) + 'ms' : '—';
-          const on = !hidden.has(t);
+          const on = !hidden.has(t.name);
           return (
             <CheckableTag
-              key={t}
+              key={t.name}
               checked={on}
               onChange={(next) => {
                 const s = new Set(hidden);
-                if (next) s.delete(t); else s.add(t);
+                if (next) s.delete(t.name); else s.add(t.name);
                 setHidden(s);
               }}
             >
-              {t} <span style={{ color: 'rgba(255,255,255,.45)' }}>{v}</span>
+              {t.grp ? <span style={{ color: 'rgba(255,255,255,.45)', marginRight: 4 }}>{t.grp}</span> : null}
+              {t.name} <span style={{ color: 'rgba(255,255,255,.45)' }}>{v}</span>
             </CheckableTag>
           );
         })}
@@ -121,19 +122,23 @@ function Block({ cfg, hist, label, prefix, targets, range, onRangeChange, statWi
 
 export default function ExitPage({ cfg, hist, exit, range, onRangeChange, statWin, onPickWin, rangeCustom, smooth }) {
   const lbl = exit.label || exit.if;
+  // 出口可以声明只测哪几组目标（内网组网线路只测对端子网 IP，外网线路只测公网 DNS）。
+  // 没声明就是全测，老配置行为不变。
+  const v4Targets = targetsFor(exit, cfg.targets_v4);
+  const v6Targets = targetsFor(exit, cfg.targets_v6);
   return (
     <>
       {wantsV4(exit) ? (
         <Block
           cfg={cfg} hist={hist} label={`${lbl} · IPv4`} prefix={exit.if}
-          targets={cfg.targets_v4 || []} range={range} onRangeChange={onRangeChange}
+          targets={v4Targets} range={range} onRangeChange={onRangeChange}
           statWin={statWin} onPickWin={onPickWin} rangeCustom={rangeCustom} smooth={smooth}
         />
       ) : null}
       {wantsV6(exit) ? (
         <Block
           cfg={cfg} hist={hist} label={`${lbl} · IPv6`} prefix={'v6-' + exit.if}
-          targets={cfg.targets_v6 || []} range={range} onRangeChange={onRangeChange}
+          targets={v6Targets} range={range} onRangeChange={onRangeChange}
           statWin={statWin} onPickWin={onPickWin} rangeCustom={rangeCustom} smooth={smooth}
         />
       ) : null}

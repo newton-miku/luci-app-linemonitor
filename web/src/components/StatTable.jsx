@@ -1,5 +1,7 @@
 // 统计表：总览页和出口页共用。
 // groups 每一项是一「块」（一个出口的一个协议），块内每个目标一行。
+// 目标现在是对象 {name, grp, kind}（lm_config_json.sh 导出的），
+// 名字带分组前缀显示（公网/内网），看曲线键时只用 name。
 import { Table } from 'antd';
 import { statForKey, lossTxt, lossCls, thCls, fmtNum } from '../stats.js';
 
@@ -9,9 +11,14 @@ export default function StatTable({ hist, groups, winMs, endTs, th, showGroup })
 
   groups.forEach((g, gi) => {
     const groupRows = g.targets.map((t) => {
-      const key = g.prefix + '|' + t;
+      const key = g.prefix + '|' + t.name;
       const s = statForKey(hist, key, winMs, endTs);
-      return { group: g.label, gid: gi, target: t, s };
+      return {
+        group: g.label,
+        gid: gi,
+        target: (t.grp ? t.grp + '/' : '') + t.name,
+        s,
+      };
     });
     spans[gi] = groupRows.length;
     rows.push(...groupRows);

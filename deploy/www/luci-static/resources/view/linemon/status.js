@@ -34,7 +34,7 @@ return view.extend({
 			// uhttpd 只给 ETag/Last-Modified，不发 Cache-Control。父页面硬刷新时
 			// 浏览器常常直接复用 iframe 里的旧文档，看不到刚部署的新版。带上版本串，
 			// URL 一变就会重新拉取。改了 /www/lm/line.html 记得把这个值一起改。
-			src: '/lm/app/index.html?v=20261002k',
+			src: '/lm/app/index.html?v=20261004a',
 			style: 'width: 100%; min-height: 720px; height: calc(100vh - 190px); ' +
 			       'border: none; border-radius: 3px; resize: vertical; background: #fff;'
 		});

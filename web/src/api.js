@@ -60,13 +60,29 @@ export async function loadHistory() {
 }
 
 export async function loadConfig() {
-  return fetchJson('config.json', {
+  const raw = await fetchJson('config.json', null);
+  const cfg = raw || {
     title: '线路质量监测看板',
     subtitle: '',
     exits: [],
     targets_v4: [],
     targets_v6: [],
-  });
+  };
+  // 老版本 lm_config_json.sh 导出的 targets_v4 是纯字符串数组（["阿里DNS",…]），
+  // 新版是对象数组（[{name,grp,kind},…]）。这里统一成对象，
+  // 免得看板上到处都要判「是字符串还是对象」。
+  cfg.targets_v4 = (cfg.targets_v4 || []).map(normTarget);
+  cfg.targets_v6 = (cfg.targets_v6 || []).map(normTarget);
+  return cfg;
+}
+
+function normTarget(t) {
+  if (typeof t === 'string') return { name: t, grp: '', kind: 'icmp' };
+  return {
+    name: t.name || '',
+    grp: t.grp || '',
+    kind: t.kind || 'icmp',
+  };
 }
 
 export async function loadTcp() {
@@ -107,3 +123,30 @@ export async function historySig() {
 export const exitType = (e) => (e && (e.type === 'v4' || e.type === 'v6') ? e.type : 'both');
 export const wantsV4 = (e) => exitType(e) !== 'v6';
 export const wantsV6 = (e) => exitType(e) !== 'v4';
+
+// 出口第 6 字段声明的「监测目标」清单：逗号分隔的目标名，空或 * 表示全测。
+// 这是「出口 ↔ 目标」对应关系的唯一存放处，设置页两侧的勾选都写它。
+// 返回 Set，null 表示不限制。
+export const TGT_NONE = '-';   // 清单里只有它 = 这个出口一个目标都不测
+export function exitTargets(e) {
+  const raw = (e && e.targets) || '';
+  if (!raw || raw === '*') return null;
+  return new Set(raw.split(',').map(s => s.trim()).filter(Boolean));
+}
+
+// 这个目标在这个出口的监测范围里吗？
+//   出口没声明清单（老配置 / 全测）  -> 永远算在内
+//   清单里写了 '-'                   -> 永远不算在内
+//   否则按目标名精确匹配（分组前缀不参与判断）
+export function inExitScope(exit, target) {
+  const s = exitTargets(exit);
+  if (!s) return true;
+  if (s.has(TGT_NONE)) return false;
+  const name = typeof target === 'string' ? target : (target && target.name) || '';
+  return s.has(name);
+}
+
+// 这个出口该画哪些 v4 目标
+export function targetsFor(exit, targets) {
+  return (targets || []).filter(t => inExitScope(exit, t));
+}

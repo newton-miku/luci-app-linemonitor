@@ -49,6 +49,9 @@ export const BAR_COLORS = [
 // 所以卡在 10%——真机上有 531 个点就是这么被误判的。
 const LOSSY_MIN_PCT = 10;
 
+// 目标可以是字符串（老调用方）或对象 {name, grp, kind}（lm_config_json.sh 新导出）。
+// 统一剥成名字，避免曲线键里多出「[object Object]」。
+const tName = (t) => (typeof t === 'string' ? t : (t && t.name) || '');
 const keyOf = (prefix, target) => `${prefix}|${target}`;
 export const v4Key = (iface, t) => keyOf(iface, t);
 export const v6Key = (iface, t) => keyOf('v6-' + iface, t);
@@ -66,7 +69,9 @@ export function buildLineDatasets(hist, targets, prefix, hidden) {
   const ds = [];
   const span = hist.length ? { min: hist[0].ts * 1000, max: hist[hist.length - 1].ts * 1000 } : null;
   targets.forEach((t, i) => {
-    const key = keyOf(prefix, t);
+    // t 可能是字符串（老路径）或对象 {name, grp, kind}（lm_config_json.sh 新导出）
+    const name = tName(t);
+    const key = keyOf(prefix, name);
     const color = PALETTE[i % PALETTE.length];
     const line = [];
     const fails = [];
@@ -81,9 +86,9 @@ export function buildLineDatasets(hist, targets, prefix, hidden) {
         line.push({ x, y: s.value, loss: s.loss || 0 });
       }
     }
-    const off = hidden.has(t);
+    const off = hidden.has(name);
     ds.push({
-      label: t,
+      label: name,
       data: line,
       borderColor: color,
       backgroundColor: color,
@@ -105,7 +110,7 @@ export function buildLineDatasets(hist, targets, prefix, hidden) {
       },
     });
     ds.push({
-      label: t + '\u0000fail',
+      label: name + '\u0000fail',
       data: fails,
       showLine: false,
       borderColor: C_ERROR,

@@ -4,7 +4,7 @@ import BarChart from '../components/BarChart.jsx';
 import Spark from '../components/Spark.jsx';
 import StatTable from '../components/StatTable.jsx';
 import { avgOf, lastValue, valColor, statForKey, fmtNum, fmtFull, fmtRate, fmtClock } from '../stats.js';
-import { wantsV4, wantsV6 } from '../api.js';
+import { wantsV4, wantsV6, targetsFor } from '../api.js';
 
 const { Statistic } = StatisticCard;
 
@@ -22,8 +22,6 @@ function RateRow({ r }) {
 
 export default function Overview({ cfg, hist, rate, range, onOpenExit }) {
   const exits = cfg.exits || [];
-  const v4Targets = cfg.targets_v4 || [];
-  const v6Targets = cfg.targets_v6 || [];
 
   const winMs = range ? range.max - range.min : 0;
   const endTs = range ? range.max / 1000 : (hist.length ? hist[hist.length - 1].ts : 0);
@@ -34,46 +32,49 @@ export default function Overview({ cfg, hist, rate, range, onOpenExit }) {
     const out = [];
     for (const e of exits) {
       const lbl = e.label || e.if;
+      // 出口可声明只测某几组目标（外网=公网 DNS、组网=对端子网），过滤后再算均值
+      const t4 = targetsFor(e, cfg.targets_v4);
+      const t6 = targetsFor(e, cfg.targets_v6);
       if (wantsV4(e)) {
-        const vals = v4Targets.map((t) => lastValue(hist, e.if + '|' + t)).filter((v) => v !== null);
+        const vals = t4.map((t) => lastValue(hist, e.if + '|' + t.name)).filter((v) => v !== null);
         const a = avgOf(vals);
-        const fail = v4Targets.some((t) => {
-          const s = hist.length ? hist[hist.length - 1].series[e.if + '|' + t] : null;
+        const fail = t4.some((t) => {
+          const s = hist.length ? hist[hist.length - 1].series[e.if + '|' + t.name] : null;
           return s && (s.value === null || s.value === undefined);
         });
         out.push({
           key: 'v4-' + e.if, label: lbl + ' 平均延迟', value: a, tab: 'ex:' + e.if,
-          prefix: e.if, targets: v4Targets,
+          prefix: e.if, targets: t4,
           detail: fail ? '最近一次存在失败目标' : '全部目标正常',
         });
       }
       if (wantsV6(e)) {
-        const vals = v6Targets.map((t) => lastValue(hist, 'v6-' + e.if + '|' + t)).filter((v) => v !== null);
+        const vals = t6.map((t) => lastValue(hist, 'v6-' + e.if + '|' + t.name)).filter((v) => v !== null);
         const a = avgOf(vals);
-        const fail = v6Targets.some((t) => {
-          const s = hist.length ? hist[hist.length - 1].series['v6-' + e.if + '|' + t] : null;
+        const fail = t6.some((t) => {
+          const s = hist.length ? hist[hist.length - 1].series['v6-' + e.if + '|' + t.name] : null;
           return s && (s.value === null || s.value === undefined);
         });
         out.push({
           key: 'v6-' + e.if, label: 'IPv6 ' + lbl + ' 平均延迟', value: a, tab: 'ex:' + e.if,
-          prefix: 'v6-' + e.if, targets: v6Targets,
+          prefix: 'v6-' + e.if, targets: t6,
           detail: fail ? '最近一次存在丢包/失败目标' : '全部目标正常',
         });
       }
     }
     return out;
-  }, [exits, v4Targets, v6Targets, hist]);
+  }, [exits, cfg.targets_v4, cfg.targets_v6, hist]);
 
   // 统计表按「出口 × 协议」分块，v4 与 v6 不再混在一张表里
   const groups = useMemo(() => {
     const g = [];
     for (const e of exits) {
       const lbl = e.label || e.if;
-      if (wantsV4(e)) g.push({ label: `${lbl} (IPv4)`, prefix: e.if, targets: v4Targets });
-      if (wantsV6(e)) g.push({ label: `${lbl} (IPv6)`, prefix: 'v6-' + e.if, targets: v6Targets });
+      if (wantsV4(e)) g.push({ label: `${lbl} (IPv4)`, prefix: e.if, targets: targetsFor(e, cfg.targets_v4) });
+      if (wantsV6(e)) g.push({ label: `${lbl} (IPv6)`, prefix: 'v6-' + e.if, targets: targetsFor(e, cfg.targets_v6) });
     }
     return g;
-  }, [exits, v4Targets, v6Targets]);
+  }, [exits, cfg.targets_v4, cfg.targets_v6]);
 
   const v4Exits = exits.filter(wantsV4);
   const sampleN = hist.length;
@@ -139,7 +140,7 @@ export default function Overview({ cfg, hist, rate, range, onOpenExit }) {
 
       <ProCard title="各目标延迟对比（最新一次采集，ms）" bordered style={{ marginBottom: 16 }}>
         {v4Exits.length ? (
-          <BarChart hist={hist} exits={v4Exits} targets={v4Targets} />
+          <BarChart hist={hist} exits={v4Exits} targets={cfg.targets_v4 || []} />
         ) : (
           <div style={{ color: 'rgba(255,255,255,.45)' }}>没有配置 IPv4 目标的出口</div>
         )}

@@ -22,10 +22,16 @@ resolve_ip() {
 
 # 重建 域名->IP 映射缓存（供 tcp_stream.sh 识别服务名）
 # 一个域名常解析出多个 IP（CDN），全部记入；只收首个会让大量连接被判成"其他"
+# 名字要去掉「分组/」前缀，否则 IP map 里的服务名是「公网/微信」，
+# tcp_stream.sh 那边显示出来很难看。
 rebuild_ipmap() {
     : > "$IPMAP"
     for t in $HTTP_TARGETS; do
         name=${t%%:*}; host=${t#*:}
+        case "$name" in
+            */*) name=${name#*/} ;;
+        esac
+        [ -n "$name" ] || continue
         nslookup "$host" "$PUBLIC_DNS" 2>/dev/null |
             awk -v n="$name" '/^Address [0-9]+: /{print $3, n}' >> "$IPMAP"
     done
@@ -116,6 +122,50 @@ curl_parse() {
     echo "$ms" | awk '{ if ($1 + 0 <= 0) { printf "FAIL 1\n" } else { printf "%d 0\n", $1*1000 } }'
 }
 
+# 目标名：剥掉「分组/」前缀，剩下的是显示名（也是 history.log 里的曲线键）。
+# 目标串里可以写「公网/阿里DNS:223.5.5.5」，也可以不写分组（「阿里DNS:223.5.5.5」）。
+# 分组只是看板上的分类标签（统计表里显示成灰字前缀），**不参与**「哪个出口测哪个
+# 目标」的判断——那个由出口行第 6 字段里的目标名清单决定，见 in_target。
+#
+# 用法：split_targets <变量前缀> <目标串>
+# 产出两组变量（用 eval 传出去，因为 busybox ash 没有全局数组）：
+#   <前缀>_NAME（显示名）<前缀>_HOST（地址/域名）
+# 两者用空格分隔、顺序一致，下标对得上。
+# ICMP / HTTP / ICMP6 三类各自调一次，所以来源类型天然由调用的地方决定，
+# 不用再想办法在循环里区分「这个目标该 ping 还是该 curl」。
+split_targets() {
+    local names="" hosts="" t nm hs
+    for t in $2; do
+        nm=${t%%:*}
+        hs=${t#*:}
+        case "$nm" in
+            */*) nm=${nm#*/} ;;
+        esac
+        [ -n "$nm" ] || continue
+        if [ -n "$names" ]; then
+            names="$names "
+            hosts="$hosts "
+        fi
+        names="$names$nm"
+        hosts="$hosts$hs"
+    done
+    eval "$1_NAME=\"\$names\""
+    eval "$1_HOST=\"\$hosts\""
+}
+
+# 这个目标是否属于该出口要监测的清单
+# $1=目标名（已剥掉「分组/」前缀）$2=出口第 6 字段声明的目标名清单（逗号分隔）
+# $2 为空或 * 表示全测——这样新加的目标默认所有出口都测，老配置也不用动。
+# 注意目标名里不能有逗号（逗号是清单的分隔符）。
+in_target() {
+    [ -z "$2" ] && return 0
+    [ "$2" = "*" ] && return 0
+    case ",$2," in
+        *",$1,"*) return 0 ;;
+    esac
+    return 1
+}
+
 # 追加一个 出口|目标=值,状态 到结果串
 append_result() {
     # $1=结果串(引用) $2=出口键 $3=目标名 $4=值 $5=状态
@@ -128,7 +178,11 @@ TS=$(date +%s)
 rebuild_ipmap
 refresh_dashboard_config
 
-# ---- 逐个出口、逐个目标测一遍 ----
+# 逐个出口、逐个目标测一遍
+split_targets TGTI "$ICMP_TARGETS"
+split_targets TGTH "$HTTP_TARGETS"
+split_targets TGT6 "$ICMP6_TARGETS"
+
 for e in $EXITS; do
     EX_IF=$(echo "$e" | cut -d'|' -f1)
     [ -z "$EX_IF" ] && continue
@@ -140,6 +194,9 @@ for e in $EXITS; do
         v4|v6) ;;
         *) EX_TYPE="both" ;;
     esac
+    # 第 6 字段是这个出口要监测的目标名清单（逗号分隔）。留空或 * 都表示全测，
+    # 新加的目标因此默认所有出口都测，老配置不加这个字段也不受影响。
+    EX_TGTS=$(echo "$e" | cut -d'|' -f6)
 
     # 源地址策略路由（测 HTTP 目标用，测完删掉）
     #   auto = 取接口当前地址。DHCP 出口必须这样：写死的地址一旦续租变了，
@@ -165,18 +222,24 @@ for e in $EXITS; do
     fi
 
     if [ "$EX_TYPE" != "v6" ]; then
-        # ICMP 类（DNS）
-        for t in $ICMP_TARGETS; do
-            name=${t%%:*}; host=${t#*:}
+        # ICMP 类（DNS；组网线路可以把对端子网 IP 也放这里）
+        ni=1
+        for name in $TGTI_NAME; do
+            host=$(echo "$TGTI_HOST" | cut -d' ' -f"$ni")
+            ni=$((ni + 1))
+            in_target "$name" "$EX_TGTS" || continue
             tip=$(resolve_ip "$host")
             [ -z "$tip" ] && tip="$host"   # 本身就是 IP 则直接用
             res=$(ping_parse "$EX_IF" "$tip")
             append_result RESULT "$EX_IF" "$name" $res
         done
 
-        # HTTP 类（网站/游戏）
-        for t in $HTTP_TARGETS; do
-            name=${t%%:*}; host=${t#*:}
+        # HTTP 类（网站/游戏，封 ICMP，测 TCP 连接耗时）
+        ni=1
+        for name in $TGTH_NAME; do
+            host=$(echo "$TGTH_HOST" | cut -d' ' -f"$ni")
+            ni=$((ni + 1))
+            in_target "$name" "$EX_TGTS" || continue
             tip=$(resolve_ip "$host")
             [ -z "$tip" ] && tip="$host"
             res=$(curl_parse "$EX_IF" "$tip" "$host")
@@ -187,8 +250,11 @@ for e in $EXITS; do
     if [ "$EX_TYPE" != "v4" ]; then
         # IPv6 类：源地址现读（见 v6_src_of 的注释），取不到就整组记 FAIL
         v6src=$(v6_src_of "$EX_IF")
-        for t in $ICMP6_TARGETS; do
-            name=${t%%:*}; tip=${t#*:}
+        ni=1
+        for name in $TGT6_NAME; do
+            tip=$(echo "$TGT6_HOST" | cut -d' ' -f"$ni")
+            ni=$((ni + 1))
+            in_target "$name" "$EX_TGTS" || continue
             if [ -n "$v6src" ]; then
                 res=$(ping6_parse "$v6src" "$tip")
             else

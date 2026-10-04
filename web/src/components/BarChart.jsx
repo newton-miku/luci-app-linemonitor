@@ -1,6 +1,11 @@
 // 总览页的柱状图：拿最近一次采集的每个 v4 目标，按出口并列对比。
+//
+// 出口可以只监测某几个目标（外网线路测公网 DNS、组网线路测对端子网），
+// 所以各出口的目标集不一定相同：横轴取所有出口目标的并集，
+// 某个出口不监测的目标在该出口的柱子上留空（不画柱子，而不是 0）。
 import { useEffect, useRef } from 'react';
 import { Chart, C_GRID, C_TEXT, C_TEXT_2, BAR_COLORS } from '../chart.js';
+import { inExitScope } from '../api.js';
 
 export default function BarChart({ hist, exits, targets, height = 260 }) {
   const ref = useRef(null);
@@ -8,11 +13,12 @@ export default function BarChart({ hist, exits, targets, height = 260 }) {
 
   useEffect(() => {
     const last = hist.length ? hist[hist.length - 1] : null;
-    const labels = targets;
+    const labels = targets.map((t) => (t.grp ? t.grp + '/' : '') + t.name);
     const datasets = exits.map((e, i) => ({
       label: e.label || e.if,
       data: targets.map((t) => {
-        const s = last?.series[e.if + '|' + t];
+        if (!inExitScope(e, t)) return null;
+        const s = last?.series[e.if + '|' + t.name];
         return s && s.value !== null && s.value !== undefined ? s.value : null;
       }),
       backgroundColor: BAR_COLORS[i % BAR_COLORS.length],

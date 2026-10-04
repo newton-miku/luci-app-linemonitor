@@ -56,6 +56,28 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
 .lm-page .ant-table-thead > tr > th { font-weight:600; background:#1f1f1f; border-bottom-color:#303030; }
 .lm-page .ant-table-tbody > tr > td { border-bottom-color:#303030; }
 
+/* 多选下拉（出口 ↔ 目标 的勾选）：按钮长得像普通输入框，
+   面板挂在 body 上用 fixed 定位 —— 表格单元格是会裁剪溢出内容的，挂在里面会被切掉 */
+.lm-multi-btn { display:flex; align-items:center; justify-content:space-between; gap:6px;
+                width:100%; height:32px; padding:0 11px; font-size:13px; text-align:left; }
+.lm-multi-btn .lm-multi-cnt { color:rgba(255,255,255,.45); font-size:12px; }
+.lm-pop { position:fixed; z-index:1200; min-width:210px; max-width:340px;
+          background:#1f1f1f; border:1px solid #424242; border-radius:8px;
+          box-shadow:0 6px 16px 0 rgba(0,0,0,.5); overflow:hidden; }
+.lm-pop[hidden] { display:none; }
+.lm-pop-head { display:flex; align-items:center; justify-content:space-between; gap:12px;
+               padding:8px 12px; border-bottom:1px solid #303030;
+               font-size:13px; color:rgba(255,255,255,.65); }
+.lm-pop-acts { display:flex; gap:10px; }
+.lm-pop-acts a { color:#69b1ff; font-size:12px; text-decoration:none; cursor:pointer; }
+.lm-pop-acts a:hover { color:#91caff; }
+.lm-pop-body { max-height:280px; overflow:auto; padding:6px 0; }
+.lm-pop-item { display:flex; align-items:center; gap:8px; padding:5px 12px; font-size:13px; cursor:pointer; }
+.lm-pop-item:hover { background:rgba(255,255,255,.06); }
+.lm-pop-item input { accent-color:#1668dc; margin:0; }
+.lm-pop-item .lm-g { color:rgba(255,255,255,.35); font-size:12px; }
+.lm-pop-empty { padding:10px 12px; font-size:13px; color:rgba(255,255,255,.35); }
+
 /* 说明文字 */
 .lm-hint { margin:16px 0 0; font-size:14px; line-height:1.8; color:rgba(255,255,255,.45); }
 .lm-hint b { color:rgba(255,255,255,.85); font-weight:600; }
@@ -97,7 +119,7 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
 
   <div class="lm-head">
     <h1>线路监测 — 设置</h1>
-    <a class="ant-btn ant-btn-sm ant-btn-default" href="line.html"><span>← 返回看板</span></a>
+    <a class="ant-btn ant-btn-sm ant-btn-default" href="app/index.html"><span>← 返回看板</span></a>
   </div>
 
   <div class="ant-tabs lm-tabs">
@@ -155,11 +177,12 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
               <table>
                 <thead class="ant-table-thead">
                   <tr class="ant-table-row">
-                    <th class="ant-table-cell" style="width:18%">接口名</th>
-                    <th class="ant-table-cell" style="width:15%">显示名</th>
-                    <th class="ant-table-cell" style="width:22%">源IP（填 auto 自动获取）</th>
-                    <th class="ant-table-cell" style="width:18%">mark 值（逗号分隔）</th>
-                    <th class="ant-table-cell" style="width:15%">类型</th>
+                    <th class="ant-table-cell" style="width:16%">接口名</th>
+                    <th class="ant-table-cell" style="width:13%">显示名</th>
+                    <th class="ant-table-cell" style="width:18%">源IP（填 auto 自动获取）</th>
+                    <th class="ant-table-cell" style="width:15%">mark 值（逗号分隔）</th>
+                    <th class="ant-table-cell" style="width:13%">类型</th>
+                    <th class="ant-table-cell" style="width:19%">监测目标</th>
                     <th class="ant-table-cell"></th>
                   </tr>
                 </thead>
@@ -184,7 +207,13 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
           <code>ip route get 1.1.1.1 mark 256</code> 逐个确认。<br>
           类型 = 这个出口测哪一类目标。<b>看板按出口分标签页</b>，类型决定那一页里
           画哪些曲线：<code>IPv4 + IPv6</code> 两组都画，<code>仅 IPv4</code> 就只画 v4 目标，
-          <code>仅 IPv6</code> 只画 v6 目标。只走 v6 的接口选「仅 IPv6」能省掉一半采集时间。
+          <code>仅 IPv6</code> 只画 v6 目标。只走 v6 的接口选「仅 IPv6」能省掉一半采集时间。<br>
+          监测目标 = 这个出口要监测哪些目标，<b>点一下弹出勾选面板</b>。
+          留空 = 全部目标都测（新加的目标默认所有出口都测）。<b>这里和「监测目标」页里
+          每个目标的「监测线路」是同一份数据</b>，两边勾的都是它，改哪边都一样。<br>
+          如果只想让组网线路测对端子网、外网线路别去碰它，就点开外网出口的勾选面板，
+          把内网目标取消掉。取消过之后这个出口就有一份显式清单，之后新加的目标不会
+          自动进这条线路 —— 想让它测就再勾一次。
         </p>
       </div>
     </div>
@@ -197,23 +226,50 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
         <div class="ant-card-head-wrapper"><div class="ant-card-head-title">监测目标</div></div>
       </div>
       <div class="ant-card-body">
-        <div class="lm-field">
-          <label>ICMP 类 — 每行一个「显示名:IP或域名」，这些目标不封 ICMP</label>
-          <textarea class="ant-input" id="icmpTargets" rows="3"></textarea>
-        </div>
-        <div class="lm-field">
-          <label>HTTP 类 — 每行一个「显示名:IP或域名」，测 TCP 连接耗时（适合封 ICMP 的网站/游戏服务器）</label>
-          <textarea class="ant-input" id="httpTargets" rows="5"></textarea>
-        </div>
-        <div class="lm-field">
-          <label>IPv6 类 — 每行一个「显示名:IPv6地址」</label>
-          <textarea class="ant-input" id="icmp6Targets" rows="3"></textarea>
+        <div class="ant-table">
+          <div class="ant-table-container">
+            <div class="ant-table-content">
+              <table>
+                <thead class="ant-table-thead">
+                  <tr class="ant-table-row">
+                    <th class="ant-table-cell" style="width:11%">类型</th>
+                    <th class="ant-table-cell" style="width:12%">分组</th>
+                    <th class="ant-table-cell" style="width:18%">名称</th>
+                    <th class="ant-table-cell" style="width:25%">地址 / 域名</th>
+                    <th class="ant-table-cell" style="width:23%">监测线路</th>
+                    <th class="ant-table-cell"></th>
+                  </tr>
+                </thead>
+                <tbody class="ant-table-tbody" id="targetRows"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
         <p class="lm-hint">
-          每个出口都会把这里所有目标各测一遍，目标越多一轮采集越慢
-          （一轮 ≈ 目标数 × 出口数 × <code>CURL_TIMEOUT</code>）。名字用来在统计表里分组，
-          <b>改名字等于把历史数据切成两段</b>，改完想合并得连 history.log 一起改。
+          <button class="ant-btn ant-btn-sm ant-btn-dashed" id="addTarget"><span>+ 添加目标</span></button>
         </p>
+        <p class="lm-hint">
+          <b>类型</b>决定用哪种方式测：<code>ICMP</code> 用 ping（DNS 这类不封 ICMP 的），
+          <code>HTTP</code> 用 curl 测 TCP 连接耗时（封 ICMP 的网站/游戏服务器），
+          <code>IPv6</code> 用 ping6（每条出口用它自己的 v6 源地址）。<br>
+          <b>分组</b>只是看板统计表里的分类标签（显示成名字前面的灰字），不决定谁测它，可以留空。<br>
+          <b>名称</b>是 history.log 里的曲线键，<b>改名等于把历史数据切成两段</b>，
+          改完想合并得连 history.log 一起改。不能有空格和逗号。<br>
+          <b>监测线路</b>和上面每个出口的「监测目标」是同一份数据 —— 这里勾哪个出口，
+          等于在那个出口上加一条目标；取消勾选等于从那个出口的清单里摘掉。两边永远一致。
+        </p>
+        <div class="lm-field" style="margin-top:18px">
+          <label>批量添加 — 每行一个「分组/名称:地址」，分组可省略</label>
+          <textarea class="ant-input" id="batchText" rows="4" placeholder="公网/阿里DNS:223.5.5.5&#10;内网/对端路由:10.10.0.1"></textarea>
+          <div style="display:flex; gap:10px; align-items:center; margin-top:10px">
+            <select class="ant-input" id="batchKind" style="width:150px">
+              <option value="icmp">ICMP 类</option>
+              <option value="http">HTTP 类</option>
+              <option value="v6">IPv6 类</option>
+            </select>
+            <button class="ant-btn ant-btn-sm ant-btn-default" id="batchAdd"><span>追加到列表</span></button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -389,6 +445,17 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
 
 <datalist id="ifaceList"></datalist>
 
+<!-- 出口 ↔ 目标 的勾选面板。全页共用一个，fixed 定位跟着按钮走 -->
+<div class="lm-pop" id="multiPop" hidden>
+  <div class="lm-pop-head">
+    <span id="multiPopTitle"></span>
+    <span class="lm-pop-acts">
+      <a data-act="all">全选</a><a data-act="none">清空</a><a data-act="inv">反选</a>
+    </span>
+  </div>
+  <div class="lm-pop-body" id="multiPopBody"></div>
+</div>
+
 <script>
 const CGI = '/cgi-bin/lm-config';
 const $ = id => document.getElementById(id);
@@ -445,12 +512,24 @@ function grabExits(txt) {
   return m[1].split(/\s+/).filter(Boolean).map(line => {
     const p = line.split('|');
     const type = (p[4] === 'v4' || p[4] === 'v6') ? p[4] : 'both';
-    return { iface: p[0] || '', label: p[1] || '', src: p[2] || '', mark: p[3] || '', type };
+    return { iface: p[0] || '', label: p[1] || '', src: p[2] || '', mark: p[3] || '',
+             type, only: (p[5] || '').trim() };
   });
 }
-// "名字:地址 名字:地址" -> 每行一条
-function grabTargets(txt, name) {
-  return grab(txt, name, '').split(/\s+/).filter(Boolean).join('\n');
+// "分组/名字:地址 名字:地址" -> [{kind,grp,name,host}]
+// 地址里可能是 IPv6，带一堆冒号，所以只按第一个冒号切。
+function grabTargets(txt, name, kind) {
+  return grab(txt, name, '').split(/\s+/).filter(Boolean).map(token => {
+    const c = token.indexOf(':');
+    if (c <= 0) return null;
+    let nm = token.slice(0, c);
+    const host = token.slice(c + 1);
+    let grp = '';
+    const s = nm.indexOf('/');
+    if (s >= 0) { grp = nm.slice(0, s); nm = nm.slice(s + 1); }
+    if (!nm || !host) return null;
+    return { kind, grp, name: nm, host };
+  }).filter(Boolean);
 }
 
 // 下拉框没有对应值时给个兜底，别让配置在页面上被悄悄改掉
@@ -495,9 +574,6 @@ function fillForm(txt) {
   $('dashTitle').value    = grab(txt, 'DASH_TITLE', '线路质量监测看板');
   $('dashSubtitle').value = grab(txt, 'DASH_SUBTITLE', '');
   $('lanNets').value      = grab(txt, 'LAN_NETS', '');
-  $('icmpTargets').value  = grabTargets(txt, 'ICMP_TARGETS');
-  $('httpTargets').value  = grabTargets(txt, 'HTTP_TARGETS');
-  $('icmp6Targets').value = grabTargets(txt, 'ICMP6_TARGETS');
   $('pingCount').value       = grab(txt, 'PING_COUNT', '3');
   $('curlTimeout').value     = grab(txt, 'CURL_TIMEOUT', '4');
   $('keepLines').value       = grab(txt, 'KEEP_LINES', '1440');
@@ -527,7 +603,17 @@ function fillForm(txt) {
 
   const exits = grabExits(txt);
   $('exitRows').innerHTML = '';
-  (exits.length ? exits : [{ iface:'', label:'', src:'', mark:'', type:'both' }]).forEach(addExitRow);
+  (exits.length ? exits : [{ iface:'', label:'', src:'', mark:'', type:'both', only:'' }]).forEach(addExitRow);
+
+  // 目标列表要放在出口之后建：「监测线路」那一列得先有出口行才有东西可勾。
+  $('targetRows').innerHTML = '';
+  [].concat(
+    grabTargets(txt, 'ICMP_TARGETS', 'icmp'),
+    grabTargets(txt, 'HTTP_TARGETS', 'http'),
+    grabTargets(txt, 'ICMP6_TARGETS', 'v6')
+  ).forEach(addTargetRow);
+
+  refreshMultiLabels();
   renderPreview();
 }
 
@@ -572,24 +658,28 @@ function exitTypeOptions(sel) {
     .join('');
 }
 function addExitRow(e) {
-  e = e || { iface:'', label:'', src:'', mark:'', type:'both' };
+  e = e || { iface:'', label:'', src:'', mark:'', type:'both', only:'' };
   const tr = document.createElement('tr');
   tr.className = 'ant-table-row ant-table-row-level-0';
+  tr.dataset.only = e.only || '';
   tr.innerHTML =
     '<td class="ant-table-cell"><input class="ant-input e-if" type="text" list="ifaceList" placeholder="eth1"></td>' +
     '<td class="ant-table-cell"><input class="ant-input e-label" type="text" placeholder="移动"></td>' +
     '<td class="ant-table-cell"><input class="ant-input e-src" type="text" placeholder="auto 或留空"></td>' +
     '<td class="ant-table-cell"><input class="ant-input e-mark" type="text" placeholder="256"></td>' +
     '<td class="ant-table-cell"><select class="ant-input e-type">' + exitTypeOptions(e.type || 'both') + '</select></td>' +
+    '<td class="ant-table-cell"><button type="button" class="ant-btn ant-btn-sm lm-multi-btn"></button></td>' +
     '<td class="ant-table-cell"><button class="ant-btn ant-btn-sm ant-btn-dangerous" type="button"><span>删除</span></button></td>';
   tr.querySelector('.e-if').value = e.iface;
   tr.querySelector('.e-label').value = e.label;
   tr.querySelector('.e-src').value = e.src;
   tr.querySelector('.e-mark').value = e.mark;
-  tr.querySelector('button').addEventListener('click', () => { tr.remove(); renderPreview(); });
-  tr.querySelectorAll('input').forEach(i => i.addEventListener('input', renderPreview));
-  tr.querySelector('.e-type').addEventListener('change', renderPreview);
+  tr.querySelector('.ant-btn-dangerous').addEventListener('click', () => { tr.remove(); refreshMultiLabels(); renderPreview(); });
+  tr.querySelectorAll('input, select').forEach(i => i.addEventListener('input', () => { refreshMultiLabels(); renderPreview(); }));
+  tr.querySelector('.e-type').addEventListener('change', () => { refreshMultiLabels(); renderPreview(); });
+  tr.querySelector('.lm-multi-btn').addEventListener('click', ev => openMultiPop('exit', tr, ev.currentTarget));
   $('exitRows').appendChild(tr);
+  refreshMultiLabels();
 }
 function readExits() {
   return [...$('exitRows').querySelectorAll('tr')].map(tr => ({
@@ -597,16 +687,206 @@ function readExits() {
     label: tr.querySelector('.e-label').value.trim(),
     src:   tr.querySelector('.e-src').value.trim(),
     mark:  tr.querySelector('.e-mark').value.trim(),
-    type:  tr.querySelector('.e-type').value
+    type:  tr.querySelector('.e-type').value,
+    only:  (tr.dataset.only || '').trim()
   })).filter(e => e.iface);
+}
+
+// ---------- 目标行 ----------
+function addTargetRow(t) {
+  t = t || { kind:'icmp', grp:'', name:'', host:'' };
+  const tr = document.createElement('tr');
+  tr.className = 'ant-table-row ant-table-row-level-0';
+  tr.dataset.old = t.name || '';
+  tr.innerHTML =
+    '<td class="ant-table-cell"><select class="ant-input t-kind">' +
+      '<option value="icmp">ICMP</option><option value="http">HTTP</option><option value="v6">IPv6</option>' +
+    '</select></td>' +
+    '<td class="ant-table-cell"><input class="ant-input t-grp" type="text" placeholder="公网"></td>' +
+    '<td class="ant-table-cell"><input class="ant-input t-name" type="text" placeholder="阿里DNS"></td>' +
+    '<td class="ant-table-cell"><input class="ant-input t-host" type="text" placeholder="223.5.5.5"></td>' +
+    '<td class="ant-table-cell"><button type="button" class="ant-btn ant-btn-sm lm-multi-btn"></button></td>' +
+    '<td class="ant-table-cell"><button class="ant-btn ant-btn-sm ant-btn-dangerous" type="button"><span>删除</span></button></td>';
+  tr.querySelector('.t-kind').value = t.kind;
+  tr.querySelector('.t-grp').value  = t.grp || '';
+  tr.querySelector('.t-name').value = t.name || '';
+  tr.querySelector('.t-host').value = t.host || '';
+  // 改名字要顺带改掉各出口清单里的旧名字，否则那些出口从此测不到这个目标。
+  // 只在失焦（change）时做：一边打字一边改会把中途的半截名字也写进清单。
+  tr.addEventListener('change', ev => {
+    if (ev.target.classList.contains('t-name')) {
+      const old = tr.dataset.old || '';
+      const now = trTargetName(tr);
+      if (old && now && old !== now) { renameInExitLists(old, now); tr.dataset.old = now; }
+    }
+    refreshMultiLabels(); renderPreview();
+  });
+  tr.addEventListener('input', ev => {
+    if (ev.target.classList.contains('t-name')) { renderPreview(); return; }
+    refreshMultiLabels(); renderPreview();
+  });
+  tr.querySelector('.lm-multi-btn').addEventListener('click', ev => openMultiPop('target', tr, ev.currentTarget));
+  tr.querySelector('.ant-btn-dangerous').addEventListener('click', () => {
+    dropFromExitLists(tr.dataset.old || trTargetName(tr));
+    tr.remove();
+    refreshMultiLabels(); renderPreview();
+  });
+  $('targetRows').appendChild(tr);
+}
+
+// ---------- 出口 ↔ 目标 的对应关系 ----------
+// 目标名清单。
+// 唯一存放处是每个出口的第 6 字段（逗号分隔的目标名）。目标那一侧的「监测线路」
+// 是从它算出来的视图，不另存一份，所以两边永远一致。
+//   空串  = 全测（默认，新加的目标自动被所有出口测）
+//   '-'   = 一个都不测（用户把某个出口的目标全取消勾选时的落点；
+//          不能写成空串，否则会被当成「全测」，语义刚好反过来）
+const TGT_NONE = '-';
+
+const exitRows   = () => [...$('exitRows').querySelectorAll('tr')];
+const targetRows = () => [...$('targetRows').querySelectorAll('tr')];
+const trTargetName = tr => tr.querySelector('.t-name').value.trim();
+const trTargetGrp  = tr => tr.querySelector('.t-grp').value.trim();
+const trTargetKind = tr => tr.querySelector('.t-kind').value;
+const allTargetNames = () => targetRows().map(trTargetName).filter(Boolean);
+const exitRowOf = iface => exitRows().find(tr => tr.querySelector('.e-if').value.trim() === iface) || null;
+
+// 出口声明的清单：[] = 全测，[TGT_NONE] = 不测任何目标
+function exitOnly(tr) {
+  const raw = (tr.dataset.only || '').trim();
+  if (!raw || raw === '*') return [];
+  return raw.split(',').map(s => s.trim()).filter(Boolean);
+}
+function exitMonitors(tr, name) {
+  const o = exitOnly(tr);
+  return o.length === 0 || o.indexOf(name) >= 0;
+}
+function setExitMonitor(tr, name, on) {
+  const all = allTargetNames();
+  let o = exitOnly(tr);
+  if (on) {
+    if (o.length === 0) { refreshMultiLabels(); return; }   // 本来就全测，不用动
+    if (o.indexOf(name) < 0) o.push(name);
+    if (all.length && all.every(n => o.indexOf(n) >= 0)) o = [];  // 又凑齐全测了，归一化
+  } else {
+    if (o.length === 0) o = all.slice();                    // 从「全测」物化成显式清单
+    o = o.filter(n => n !== name);
+    if (!o.length) o = [TGT_NONE];
+  }
+  tr.dataset.only = o.join(',');
+  refreshMultiLabels();
+}
+// 改名 / 删除目标时，把各出口清单里指向它的那一项一起改掉
+function mapInExitLists(name, fn) {
+  exitRows().forEach(tr => {
+    const raw = (tr.dataset.only || '').trim();
+    if (!raw || raw === '*') return;
+    const o = raw.split(',').map(s => s.trim()).filter(Boolean)
+                 .map(n => (n === name ? fn(n) : n)).filter(Boolean);
+    tr.dataset.only = o.length ? o.join(',') : TGT_NONE;
+  });
+}
+const renameInExitLists = (oldName, newName) => { if (oldName && oldName !== newName) mapInExitLists(oldName, () => newName); };
+const dropFromExitLists = name => { if (name) mapInExitLists(name, () => ''); };
+
+// 两种视图上的按钮文字
+function refreshMultiLabels() {
+  const total = allTargetNames().length;
+  exitRows().forEach(tr => {
+    const btn = tr.querySelector('.lm-multi-btn');
+    if (!btn) return;
+    const o = exitOnly(tr);
+    if (o.length === 0) btn.textContent = '全部（' + total + '）';
+    else if (o.length === 1 && o[0] === TGT_NONE) btn.textContent = '不监测任何目标';
+    else btn.textContent = '已选 ' + o.filter(n => n !== TGT_NONE).length + ' / ' + total;
+  });
+  const rows = exitRows();
+  targetRows().forEach(tr => {
+    const btn = tr.querySelector('.lm-multi-btn');
+    if (!btn) return;
+    const name = trTargetName(tr);
+    let on = 0;
+    rows.forEach(x => { if (name && exitMonitors(x, name)) on++; });
+    btn.textContent = (!rows.length || !name) ? '—'
+                    : (on === rows.length ? '全部（' + rows.length + '）' : on + ' / ' + rows.length);
+  });
+}
+
+// ---------- 勾选面板（出口侧和目侧共用一个，fixed 定位跟着按钮走） ----------
+let popCtx = null;   // { kind:'exit'|'target', tr }
+
+function openMultiPop(kind, tr, btn) {
+  popCtx = { kind, tr };
+  const lbl = tr.querySelector('.e-label') ? (tr.querySelector('.e-label').value.trim() || tr.querySelector('.e-if').value.trim()) : '';
+  $('multiPopTitle').textContent = kind === 'exit'
+    ? '出口「' + (lbl || '未命名') + '」监测哪些目标'
+    : '哪些线路监测「' + (trTargetName(tr) || '未命名') + '」';
+  renderMultiPop();
+  const pop = $('multiPop');
+  pop.hidden = false;
+  const r = btn.getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  let left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+  let top = r.bottom + 6;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);   // 底部放不下就翻到上面
+  pop.style.left = left + 'px';
+  pop.style.top  = top + 'px';
+}
+function closeMultiPop() { $('multiPop').hidden = true; popCtx = null; }
+
+function renderMultiPop() {
+  if (!popCtx) return;
+  const body = $('multiPopBody');
+  body.innerHTML = '';
+  const tr = popCtx.tr;
+  if (popCtx.kind === 'exit') {
+    const rows = targetRows();
+    if (!rows.length) { body.innerHTML = '<div class="lm-pop-empty">还没有监测目标，先去「监测目标」页加几个</div>'; return; }
+    rows.forEach(t => {
+      const n = trTargetName(t);
+      if (!n) return;
+      body.appendChild(popItem(n, trTargetGrp(t), exitMonitors(tr, n),
+        on => setExitMonitor(tr, n, on)));
+    });
+  } else {
+    const rows = exitRows();
+    if (!rows.length) { body.innerHTML = '<div class="lm-pop-empty">还没有出口，先去「出口」页加一个</div>'; return; }
+    const name = trTargetName(tr);
+    rows.forEach(x => {
+      const iface = x.querySelector('.e-if').value.trim();
+      const lbl = x.querySelector('.e-label').value.trim() || iface;
+      body.appendChild(popItem(lbl, iface, !!name && exitMonitors(x, name),
+        on => { if (name) setExitMonitor(x, name, on); }));
+    });
+  }
+}
+function popItem(label, sub, checked, onChange) {
+  const d = document.createElement('label');
+  d.className = 'lm-pop-item';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = !!checked;
+  cb.addEventListener('change', () => { onChange(cb.checked); renderMultiPop(); renderPreview(); });
+  d.appendChild(cb);
+  const s = document.createElement('span');
+  s.textContent = label;
+  d.appendChild(s);
+  if (sub) { const g = document.createElement('span'); g.className = 'lm-g'; g.textContent = sub; d.appendChild(g); }
+  return d;
 }
 
 // ---------- 生成配置文本 ----------
 function buildConf() {
   const exits = readExits();
-  const exitLines = exits.map(e => [e.iface, e.label, e.src, e.mark, e.type].join('|')).join('\n');
+  const exitLines = exits.map(e => [e.iface, e.label, e.src, e.mark, e.type, e.only].join('|')).join('\n');
   const oneLine = s => s.split('\n').map(x => x.trim()).filter(Boolean).join(' ');
   const num = (id, dflt) => $(id).value.trim() || dflt;
+  // 目标按类型拼回 "分组/名字:地址 名字:地址"
+  const targetSpec = kind => targetRows().filter(tr => trTargetKind(tr) === kind).map(tr => {
+    const n = trTargetName(tr), h = tr.querySelector('.t-host').value.trim(), g = trTargetGrp(tr);
+    if (!n || !h) return '';
+    return (g ? g + '/' : '') + n + ':' + h;
+  }).filter(Boolean).join(' ');
 
   return [
     '# ============================================================',
@@ -620,7 +900,7 @@ function buildConf() {
     'DASH_SUBTITLE="' + $('dashSubtitle').value.trim() + '"',
     '',
     '# ---------------- 出口定义 ----------------',
-    '# 每行一个出口，格式：接口名|显示名|源IP|mark值|类型',
+    '# 每行一个出口，格式：接口名|显示名|源IP|mark值|类型|监测目标',
     '#   接口名  路由器上的网络接口，用于 ping -I / curl --interface',
     '#   显示名  看板上显示的名字，不能有空格',
     '#   源IP    测 HTTP 目标需要源地址策略路由时填。填 auto 表示自动取接口当前地址',
@@ -630,6 +910,11 @@ function buildConf() {
     '#   mark    该出口在 conntrack 里的 fwmark，多个用逗号分隔',
     '#   类型    v4 = 只测 IPv4 目标，v6 = 只测 IPv6 目标，both = 都测',
     '#           看板按出口分标签页，类型决定那一页里有哪些曲线',
+    '#   监测目标  这个出口要监测哪些目标，写目标名（不带分组前缀），逗号分隔。',
+    '#           留空或 * = 全部目标都测，这是默认值。',
+    '#           这里就是「出口 ↔ 目标」这份对应关系的唯一存放处 —— 设置页里从出口侧',
+    '#           勾目标、从目标侧勾线路，改的都是这个字段，所以两边永远一致。',
+    '#           '-' 表示一个都不测（把一个出口的目标全取消勾选后就是这个）。',
     'EXITS="',
     exitLines,
     '"',
@@ -640,9 +925,11 @@ function buildConf() {
     'LAN_NETS="' + oneLine($('lanNets').value) + '"',
     '',
     '# ---------------- 监测目标 ----------------',
-    'ICMP_TARGETS="' + oneLine($('icmpTargets').value) + '"',
-    'HTTP_TARGETS="' + oneLine($('httpTargets').value) + '"',
-    'ICMP6_TARGETS="' + oneLine($('icmp6Targets').value) + '"',
+    '# 格式：分组/名字:地址，分组可省略，只是看板统计表里的分类标签，不决定谁测它。',
+    '# 谁测它看上面每个出口的第 6 字段。',
+    'ICMP_TARGETS="' + targetSpec('icmp') + '"',
+    'HTTP_TARGETS="' + targetSpec('http') + '"',
+    'ICMP6_TARGETS="' + targetSpec('v6') + '"',
     '',
     '# ---------------- 采集参数 ----------------',
     'PING_COUNT=' + num('pingCount', '3'),
@@ -729,11 +1016,74 @@ $('cfgTabs').addEventListener('click', ev => {
   if (tab) switchTab(tab.dataset.tab);
 });
 $('addExit').addEventListener('click', () => { addExitRow(); renderPreview(); });
+$('addTarget').addEventListener('click', () => { addTargetRow(); refreshMultiLabels(); renderPreview(); });
+$('batchAdd').addEventListener('click', addBatchTargets);
 $('saveBtn').addEventListener('click', saveConf);
 $('reloadBtn').addEventListener('click', loadConf);
 $('alertTest').addEventListener('click', testAlert);
 bindSwitch('alertEnable',  'alertEnableText',  '开启 — 异常时推送', '关闭 — 只采集，不推送');
 bindSwitch('alertRecover', 'alertRecoverText', '推送「已恢复」',   '不推送');
+
+// ---------- 批量添加目标 ----------
+function addBatchTargets() {
+  const kind = $('batchKind').value;
+  const lines = $('batchText').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) { setStatus('批量添加：上面那框是空的', 'lm-bad'); return; }
+  let bad = 0;
+  lines.forEach(line => {
+    const c = line.indexOf(':');
+    if (c <= 0) { bad++; return; }
+    let nm = line.slice(0, c).trim();
+    const host = line.slice(c + 1).trim();
+    let grp = '';
+    const s = nm.indexOf('/');
+    if (s >= 0) { grp = nm.slice(0, s).trim(); nm = nm.slice(s + 1).trim(); }
+    if (!nm || !host) { bad++; return; }
+    addTargetRow({ kind, grp, name: nm, host });
+  });
+  $('batchText').value = '';
+  refreshMultiLabels();
+  renderPreview();
+  setStatus(bad ? ('批量添加完成，' + bad + ' 行看不懂（要「名字:地址」）') : '批量添加完成', bad ? 'lm-bad' : 'lm-ok');
+}
+
+// ---------- 勾选面板的交互 ----------
+$('multiPop').addEventListener('click', ev => {
+  const a = ev.target.closest('a[data-act]');
+  if (!a || !popCtx) return;
+  const act = a.dataset.act;
+  const tr = popCtx.tr;
+  if (popCtx.kind === 'exit') {
+    const names = allTargetNames();
+    if (act === 'all')       tr.dataset.only = '';
+    else if (act === 'none') tr.dataset.only = TGT_NONE;
+    else {
+      const o = names.filter(n => !exitMonitors(tr, n));
+      tr.dataset.only = o.length ? o.join(',') : TGT_NONE;
+    }
+    refreshMultiLabels();
+  } else {
+    const name = trTargetName(tr);
+    if (name) exitRows().forEach(x => setExitMonitor(x, name, act === 'all' ? true : act === 'none' ? false : !exitMonitors(x, name)));
+  }
+  renderMultiPop();
+  renderPreview();
+});
+// 点别处 / 切页 / 滚页面都把面板收起来 —— 它是 fixed 定位的，不跟着走就会飘在错的地方
+document.addEventListener('click', ev => {
+  if ($('multiPop').hidden) return;
+  if (ev.target.closest('#multiPop') || ev.target.closest('.lm-multi-btn')) return;
+  closeMultiPop();
+});
+window.addEventListener('resize', closeMultiPop);
+// 页面滚动时面板得跟着收起（它是 fixed 定位的，不跟滚）。但面板自己那个可以滚的
+// 列表不能算 —— 捕获阶段连面板内部的滚动都会收到，不排除掉就没法滚列表了。
+document.addEventListener('scroll', ev => {
+  const t = ev.target;
+  if (t && typeof t.closest === 'function' && t.closest('#multiPop')) return;
+  closeMultiPop();
+}, true);
+document.querySelectorAll('.ant-tabs-tab').forEach(t => t.addEventListener('click', closeMultiPop));
 
 loadConf();
 loadIfaces();

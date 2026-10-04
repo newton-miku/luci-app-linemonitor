@@ -8,7 +8,7 @@ export default function Spark({ hist, prefix, targets, height = 80 }) {
 
   useEffect(() => {
     const datasets = targets.map((t, i) => {
-      const key = prefix + '|' + t;
+      const key = prefix + '|' + t.name;
       const color = PALETTE[i % PALETTE.length];
       const data = [];
       for (const rec of hist) {
@@ -17,7 +17,7 @@ export default function Spark({ hist, prefix, targets, height = 80 }) {
         data.push({ x: rec.ts * 1000, y: s.value === null || s.value === undefined ? null : s.value });
       }
       return {
-        label: t,
+        label: t.name,
         data,
         borderColor: color,
         backgroundColor: color,

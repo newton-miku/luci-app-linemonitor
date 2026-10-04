@@ -124,8 +124,10 @@ export default function ExitPage({ cfg, hist, exit, range, onRangeChange, statWi
   const lbl = exit.label || exit.if;
   // 出口可以声明只测哪几组目标（内网组网线路只测对端子网 IP，外网线路只测公网 DNS）。
   // 没声明就是全测，老配置行为不变。
-  const v4Targets = targetsFor(exit, cfg.targets_v4);
-  const v6Targets = targetsFor(exit, cfg.targets_v6);
+  // targetsFor 每次调用都返回新数组，不稳住的话 LineChart 的数据 effect 会在
+  // 每次重渲染（速率 2 秒一轮询）里白跑一遍 update，用户滚轮缩放到一半就被打断。
+  const v4Targets = useMemo(() => targetsFor(exit, cfg.targets_v4), [exit, cfg]);
+  const v6Targets = useMemo(() => targetsFor(exit, cfg.targets_v6), [exit, cfg]);
   return (
     <>
       {wantsV4(exit) ? (

@@ -27,9 +27,11 @@ export default function App() {
   // 否则拖到刚好 6 小时会把「6 小时」按钮点亮，误导。
   const [rangeCustom, setRangeCustom] = useState(false);
   const sigRef = useRef('');
+  const spanRef = useRef(null);
 
   const applySpan = useCallback((h, winKey) => {
     const span = dataSpan(h);
+    spanRef.current = span;
     if (!span.max) return null;
     const w = WINDOWS.find((x) => x.key === winKey) || WINDOWS[0];
     const r = w.ms
@@ -37,6 +39,42 @@ export default function App() {
       : { min: span.min, max: span.max };
     setRange(r);
     return r;
+  }, []);
+
+  // 历史刷新后窗口要跟着新数据走，规则跟旧看板一致：
+  //   盖满全量   → 跟着新范围放宽（不然最新几个点会被挡在轴外面）
+  //   右端贴着最新点 → 等宽平移到新末端（正在盯最新数据的人不该被甩回历史）
+  //   停在历史某段 → 原地不动，只保证不越出数据
+  // 窗口状态只在这里推进一处，图表那边只管照着 range 画——
+  // 以前是每个图表各改各的窗口又不回报，结果底部区间条和图表各说各话。
+  const advanceRange = useCallback((h) => {
+    const span = dataSpan(h);
+    const prev = spanRef.current;
+    spanRef.current = span;
+    if (!span.max) return;
+    const TOL = 1000; // 采样间隔 60 秒，1 秒容差足够判「贴边」
+    setRange((prevRange) => {
+      if (!prevRange || !prev || !(prev.max > prev.min)) return { min: span.min, max: span.max };
+      if (prevRange.min <= prev.min + TOL && prevRange.max >= prev.max - TOL) {
+        return { min: span.min, max: span.max };
+      }
+      if (prevRange.max >= prev.max - TOL) {
+        const w = prevRange.max - prevRange.min;
+        return { min: Math.max(span.min, span.max - w), max: span.max };
+      }
+      let min = prevRange.min;
+      let max = prevRange.max;
+      if (min < span.min) {
+        min = span.min;
+        max = Math.min(span.max, min + (prevRange.max - prevRange.min));
+      }
+      if (max > span.max) {
+        const w = max - min;
+        max = span.max;
+        min = Math.max(span.min, max - w);
+      }
+      return { min, max };
+    });
   }, []);
 
   useEffect(() => {
@@ -79,12 +117,14 @@ export default function App() {
       const sig = await historySig();
       if (sig && sig !== sigRef.current) {
         sigRef.current = sig;
-        setHist(await loadHistory());
+        const h = await loadHistory();
+        setHist(h);
+        advanceRange(h);
         setTcp(await loadTcp());
       }
     }, POLL_MS);
     return () => clearInterval(t);
-  }, []);
+  }, [advanceRange]);
 
   const onPickWin = useCallback((ms) => {
     const span = dataSpan(hist);
@@ -97,8 +137,15 @@ export default function App() {
 
   const onRangeChange = useCallback((r) => {
     if (!r || !Number.isFinite(r.min) || !Number.isFinite(r.max)) return;
-    setRange(r);
-    setRangeCustom(true);
+    // 缩放回调会在一次手势里连着来几十次，值没变就复用旧对象，
+    // 免得每滚一格都带着整个看板重渲染一遍
+    setRange((prev) =>
+      prev && Math.abs(prev.min - r.min) < 1 && Math.abs(prev.max - r.max) < 1
+        ? prev
+        : { min: r.min, max: r.max }
+    );
+    // 滚轮/拖拽缩放后由图表上报：窗口盖满全量时算「默认」，预设按钮跟着回亮
+    setRangeCustom(!r.full);
   }, []);
 
   const exits = cfg?.exits || [];

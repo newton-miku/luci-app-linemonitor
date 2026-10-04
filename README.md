@@ -722,6 +722,29 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
     `node --check` 与 `tests/check_js.js` 都查不出来（语法完全合法）。同类的还有
     `+ undefined`、把对象直接拼进字符串（`[object Object]`）。**改完预览页扫一眼有没有
     `NaN` / `undefined` / `[object`** —— 这条是端到端验证里最便宜的一步。
+62. **Chart.js 缩放插件的回调少写一层就静默失效**。插件里的 `state.options` 就是
+    `chart.options.plugins.zoom`，所以回调的完整路径是：
+    缩放（滚轮 / 捏合 / 框选）→ `plugins.zoom.zoom.onZoomComplete`（**三层**），
+    平移（拖拽）→ `plugins.zoom.pan.onPanComplete`（**两层**）。第一版 React 看板两个都写在
+    `plugins.zoom.onZoomComplete`（少一层），插件 `addListeners()` 里 `const {onZoomComplete}
+    = options.zoom` 取到 `undefined`，`if (handler)` 不成立就**压根不注册**；滚轮本身照常缩放
+    （`zoom.wheel.enabled` 那条路径没问题），但回调一次都不触发。于是两个症状同时出现：
+    ① 底部时间条的把手不动；② 每次重渲染（速率 2 秒一轮询）图表都被 `range` 拉回旧窗口，
+    看着就是「缩放后自动恢复默认」。挂错层级不报错、不打日志，只能比对源码。
+    查证手法：从 canvas 反查 React fiber（`__reactFiber$*` 往上找
+    `memoizedState.memoizedState.current === canvas` 的 fiber，其 `memoizedState.next.memoizedState
+    .current` 就是 `chartRef.current`；`fiber.type.name` 被 minify 过，不能靠名字找），
+    拿到实例再逐层打印 `chart.options.plugins.zoom`；或者直接 grep 打出来的 bundle 里
+    `.plugins.zoom.zoom.onZoomComplete=` 那一行。**另外 `chart.zoomScale()` 这个公共 API 也不
+    触发 `onZoomComplete`**（它走的是 `resetZoom` 那条收尾分支），拿它模拟滚轮会得出错误结论。
+63. **自动刷新不许重设 `options.scales.x.min/max`，x 轴窗口只能有一个真相**。老版单文件看板
+    每次刷数据都无条件把 x 轴设成全量，60 秒一轮询就把用户刚缩放出来的窗口抹掉（第 41 条讲的
+    是同一件事的另一半）。这一版把窗口状态收到 `App` 一处（`range`），图表只负责「照着 `range`
+    画」+ 把手势结果 `onRangeChange` 报回去。配套还有两个小坑：`targetsFor()` 每次调用都返回
+    新数组，直接当 prop 传会让 `LineChart` 的数据 effect 在**每次重渲染**里白跑一遍
+    `update('none')`，用户滚轮缩放到一半就被打断（用 `useMemo` 钉住引用）；`advanceRange()`
+    （轮询后推进窗口）要分三种情况——盖满全量就跟着新数据放宽、右端贴着最新点就等宽平移、
+    停在历史段就原地不动只做 clamp，判据容差取 1 秒（采样间隔 60 秒）。
 
 ## 界面风格
 

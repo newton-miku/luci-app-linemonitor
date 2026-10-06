@@ -351,13 +351,14 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
       </div>
       <div class="ant-card-body">
         <div class="lm-grid3">
-          <div class="lm-field"><label>ALERT_MAX_MS — 单次延迟超过算异常（毫秒）</label><input class="ant-input" type="text" id="alertMaxMs" placeholder="300"></div>
+          <div class="lm-field"><label>ALERT_MAX_MS — 延迟超过算「质量异常」（毫秒，留空不看延迟）</label><input class="ant-input" type="text" id="alertMaxMs" placeholder="1000"></div>
+          <div class="lm-field"><label>ALERT_LOSS_PCT — 丢包超过算「质量异常」（%）</label><input class="ant-input" type="number" id="alertLossPct" min="0" max="100"></div>
           <div class="lm-field"><label>ALERT_DEBOUNCE — 连续几次才推送</label><input class="ant-input" type="number" id="alertDebounce" min="1" max="60"></div>
-          <div class="lm-field"><label>ALERT_COOLDOWN — 未恢复时重发间隔（秒）</label><input class="ant-input" type="number" id="alertCooldown" min="0" max="86400"></div>
         </div>
         <div class="lm-grid3" style="margin-top:14px">
+          <div class="lm-field"><label>ALERT_COOLDOWN — 未恢复时重发间隔（秒，0 = 不重复推）</label><input class="ant-input" type="number" id="alertCooldown" min="0" max="86400"></div>
           <div class="lm-field">
-            <label>ALERT_RECOVER — 恢复时是否推一条</label>
+            <label>ALERT_RECOVER — 断线恢复时是否推一条</label>
             <div class="lm-switch-row">
               <button type="button" class="ant-switch ant-switch-checked" id="alertRecover" role="switch" aria-checked="true">
                 <div class="ant-switch-handle"></div>
@@ -366,17 +367,20 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
               <span class="lm-switch-text" id="alertRecoverText">推送「已恢复」</span>
             </div>
           </div>
-          <div class="lm-field" style="grid-column:span 2">
-            <label>ALERT_IGNORE — 额外忽略（空格分隔，可写目标名 / 出口名 / 出口|目标）</label>
+          <div class="lm-field">
+            <label>ALERT_IGNORE — 额外忽略（空格分隔）</label>
             <input class="ant-input" type="text" id="alertIgnore" placeholder="抖音 pppoe-wan2|QQ">
           </div>
         </div>
         <p class="lm-hint">
-          <b>不可达</b>或<b>延迟超过 ALERT_MAX_MS</b>都算异常，单个目标连续
-          <code>ALERT_DEBOUNCE</code> 次异常才推第一条，避免把偶发抖动（移动线路每隔几十分钟会有一次
-          1 秒左右的尖峰）当成故障。推过之后保持沉默，直到恢复正常，或者过了
-          <code>ALERT_COOLDOWN</code> 再提醒一次。同一轮里多个目标出问题会<b>合并成一条消息</b>发出去。<br>
-          <code>ALERT_COOLDOWN=0</code> 表示只在首次异常和恢复时各推一条。<br>
+          异常分两级，各自<b>只推一条</b>，不会反复刷屏：<br>
+          <b>不可达</b>（ping 全丢 / 网站连不上）= 线路断了 —— 推一条；恢复后再推一条「已恢复」。<br>
+          <b>丢包 ≥ ALERT_LOSS_PCT</b> 或 <b>延迟 > ALERT_MAX_MS</b> = 能通但质量差 —— 推一条提醒；
+          <b>恢复正常不推</b>（丢包抖动太频繁，报恢复只会更吵）。<br>
+          单个目标要连续 <code>ALERT_DEBOUNCE</code> 次处于同一等级才推第一条，避免把偶发抖动
+          （移动线路每隔几十分钟会有一次 1 秒左右的尖峰）当成故障。
+          <code>ALERT_COOLDOWN=0</code> 表示同等级不再重复推；设成 3600 就是没好转时每小时再提一次。<br>
+          同一轮里同类多个目标会<b>合并成一条消息</b>发出去。<br>
           当前移动和电信的 IPv6 目标常年不可达，所以范围默认 <code>v4</code>，不然会一直响。
         </p>
       </div>
@@ -595,9 +599,10 @@ function fillForm(txt) {
             'alertRecoverText', '推送「已恢复」', '不推送');
   $('alertUrl').value        = grab(txt, 'ALERT_URL', '');
   $('alertToken').value      = grab(txt, 'ALERT_TOKEN', '');
-  $('alertMaxMs').value      = grab(txt, 'ALERT_MAX_MS', '300');
+  $('alertMaxMs').value      = grab(txt, 'ALERT_MAX_MS', '1000');
+  $('alertLossPct').value    = grab(txt, 'ALERT_LOSS_PCT', '10');
   $('alertDebounce').value   = grab(txt, 'ALERT_DEBOUNCE', '3');
-  $('alertCooldown').value   = grab(txt, 'ALERT_COOLDOWN', '1800');
+  $('alertCooldown').value   = grab(txt, 'ALERT_COOLDOWN', '0');
   $('alertIgnore').value     = grab(txt, 'ALERT_IGNORE', '');
   renderAlertHint();
 
@@ -958,14 +963,17 @@ function buildConf() {
     'ALERT_URL="' + $('alertUrl').value.trim() + '"',
     'ALERT_TOKEN="' + $('alertToken').value.trim() + '"',
     '',
-    '# 单次延迟超过这个值（毫秒）算异常。留空则不看延迟。',
+    '# 延迟超过这个值（毫秒）算「质量异常」。留空则不看延迟。',
     'ALERT_MAX_MS=' + $('alertMaxMs').value.trim(),
+    '# 丢包超过这个百分比算「质量异常」。0 = 只要有丢包就报。',
+    'ALERT_LOSS_PCT=' + num('alertLossPct', '10'),
     '',
-    '# 连续几次异常才推第一条；一直没恢复时隔多少秒再提醒一次（0 = 只在首次和恢复时推）。',
+    '# 连续几次处于同一等级才推第一条；同一等级没好转时隔多少秒再提醒一次',
+    '# （0 = 不重复推，只在状态变化时各推一条）。',
     'ALERT_DEBOUNCE=' + num('alertDebounce', '3'),
-    'ALERT_COOLDOWN=' + num('alertCooldown', '1800'),
+    'ALERT_COOLDOWN=' + num('alertCooldown', '0'),
     '',
-    '# 恢复正常时是否推一条「已恢复」。',
+    '# 断线（不可达）恢复时是否推一条「已恢复」；丢包恢复不推。',
     'ALERT_RECOVER=' + (switchOn('alertRecover') ? '1' : '0'),
     '',
     '# 监测范围：v4 / v6 / all',

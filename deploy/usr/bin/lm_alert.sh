@@ -7,17 +7,26 @@
 #              lm_alert.sh --status 打印当前各目标的告警状态
 #
 # 去抖设计（避免每分钟轰炸一次）：
-#   某个目标连续 ALERT_DEBOUNCE 次异常才推第一条；
-#   推过之后保持沉默，直到恢复正常（推一条「已恢复」）或超过 ALERT_COOLDOWN 再提醒一次。
-#   同一轮里多个目标异常会合并成一条消息发出去。
+#   异常分两级，各自独立去抖、各自只推一条：
+#     down  彻底不可达（ping 全丢 / curl 连不上）—— 线路断了
+#     loss  能通但质量差（丢包 ≥ ALERT_LOSS_PCT，或延迟 > ALERT_MAX_MS）
+#   某个目标连续 ALERT_DEBOUNCE 次处于同一级才推第一条；推过之后保持沉默，
+#   同级不再重复推（ALERT_COOLDOWN=0），除非显式设了重发间隔。
+#   升级（loss → down）会补推一条；降级（down → loss）算「线路回来了」，
+#   按恢复处理（此时还没完全好，正文里会注明仍有丢包）。
+#   恢复：只有 down 变正常才推「已恢复」，loss 变正常不推 —— 丢包抖动太频繁，
+#   报恢复只会更吵。ALERT_RECOVER=0 可整体关掉恢复推送。
+#   同一轮里同类多个目标会合并成一条消息发出去。
 #
 # 状态存在 /tmp（掉电即忘）。重启后如果仍然异常，会重新走一遍去抖，
 # 比写进 flash 每分钟擦一次强。
 
-. /etc/line-monitor/targets.conf
+# 路径可以用环境变量覆盖，方便离线测试（tests/test_alert_policy.sh 就是这么跑的）
+CONF=${LM_CONF:-/etc/line-monitor/targets.conf}
+[ -f "$CONF" ] && . "$CONF"
 
-LOG=/www/lm/history.log
-STATE=/tmp/lm_alert.state
+LOG=${LM_LOG:-/www/lm/history.log}
+STATE=${LM_STATE:-/tmp/lm_alert.state}
 
 # ---------------- 参数兜底 ----------------
 # 老版本的 targets.conf 里没有这些字段，用默认值顶上，避免必须重装配置
@@ -25,9 +34,10 @@ STATE=/tmp/lm_alert.state
 : "${ALERT_TYPE:=json}"
 : "${ALERT_URL:=}"
 : "${ALERT_TOKEN:=}"
-: "${ALERT_MAX_MS:=300}"
+: "${ALERT_MAX_MS:=1000}"
+: "${ALERT_LOSS_PCT:=10}"
 : "${ALERT_DEBOUNCE:=3}"
-: "${ALERT_COOLDOWN:=1800}"
+: "${ALERT_COOLDOWN:=0}"
 : "${ALERT_RECOVER:=1}"
 : "${ALERT_SCOPE:=v4}"
 : "${ALERT_IGNORE:=}"
@@ -143,6 +153,7 @@ if [ "$1" = "--status" ]; then
         # 手工对齐：printf 的 %-30s 按字节数补空格，中文一个字两字节，表头会歪
         echo "出口|目标                     状态  连续  上次推送"
         awk '{print $1, $2, $3, $4}' "$STATE" | while read -r k s c t; do
+            [ "$s" = "bad" ] && s=down   # 老状态文件里的 bad 等于 down
             if [ "$t" = "0" ]; then
                 w="-"
             else
@@ -151,6 +162,7 @@ if [ "$1" = "--status" ]; then
             # 键最长 20 字节左右，补到 30 列
             printf '%-30s %-5s %-5s %s\n' "$k" "$s" "$c" "$w"
         done
+        echo "(状态：ok 正常 / down 不可达 / loss 丢包或延迟偏高)"
     else
         echo "还没有任何状态记录"
     fi
@@ -164,11 +176,16 @@ fi
 LAST=$(tail -n 1 "$LOG")
 [ -n "$LAST" ] || exit 0
 
+# 状态文件必须先存在：awk 打不开输入文件时会直接退出、不跑 END 块，
+# 于是 set_state 的第一次写入会落进一个空文件，状态凭空丢掉。
+[ -f "$STATE" ] || : > "$STATE"
+
 TS=$(printf '%s' "$LAST" | awk '{print $1}')
 case "$TS" in ''|*[!0-9]*) exit 0 ;; esac
 
-DOWN_LIST=""; DOWN_N=0
-UP_LIST="";   UP_N=0
+DOWN_LIST=""; DOWN_N=0    # 彻底不可达
+LOSS_LIST=""; LOSS_N=0    # 丢包 / 延迟偏高
+UP_LIST="";   UP_N=0      # 恢复（只统计 down 恢复）
 
 # history.log 的每行：<ts> <键>=<值>,<状态> ... 值里没有空格
 for tok in $(printf '%s' "$LAST" | awk '{for (i = 2; i <= NF; i++) print $i}'); do
@@ -181,17 +198,17 @@ for tok in $(printf '%s' "$LAST" | awk '{for (i = 2; i <= NF; i++) print $i}'); 
 
     in_scope "$ex" "$tg" || continue
 
-    # 判定是否异常
-    bad=0
+    # 分级：down 彻底不通 / loss 能通但质量差 / ok 正常
+    level=ok
     reason=""
     if [ "$v" = "FAIL" ]; then
-        bad=1; reason="不可达"
-    elif [ "$st" != "0" ]; then
-        bad=1; reason="丢包 ${st}%"
+        level=down; reason="不可达"
+    elif [ -n "$st" ] && [ "$st" != "0" ] && [ "$st" -ge "$ALERT_LOSS_PCT" ] 2>/dev/null; then
+        level=loss; reason="丢包 ${st}%"
     elif [ -n "$ALERT_MAX_MS" ]; then
         ms=$(printf '%s' "$v" | cut -d. -f1)
         if [ -n "$ms" ] && [ "$ms" -gt "$ALERT_MAX_MS" ] 2>/dev/null; then
-            bad=1; reason="延迟 ${ms}ms（阈值 ${ALERT_MAX_MS}ms）"
+            level=loss; reason="延迟 ${ms}ms（阈值 ${ALERT_MAX_MS}ms）"
         fi
     fi
 
@@ -200,30 +217,61 @@ for tok in $(printf '%s' "$LAST" | awk '{for (i = 2; i <= NF; i++) print $i}'); 
     p_push=$(get_field "$key" 4)
     [ -n "$p_cont" ] || p_cont=0
     [ -n "$p_push" ] || p_push=0
+    [ -n "$p_state" ] || p_state=ok
+    # 老状态文件里异常一律写 bad，按 down 处理
+    case "$p_state" in bad) p_state=down ;; esac
 
-    if [ "$bad" = "1" ]; then
+    if [ "$level" != "ok" ]; then
         cont=$((p_cont + 1))
         last_push=$p_push
 
-        if [ "$p_state" != "bad" ]; then
-            # 还没报过：连够了次数才报
+        if [ "$p_state" = "ok" ]; then
+            # 由正常转异常：连够 DEBOUNCE 次才推第一条
             if [ "$cont" -ge "$ALERT_DEBOUNCE" ]; then
+                if [ "$level" = "down" ]; then
+                    DOWN_LIST="$DOWN_LIST
+· $ex · $tg —— $reason"
+                    DOWN_N=$((DOWN_N + 1))
+                else
+                    LOSS_LIST="$LOSS_LIST
+· $ex · $tg —— $reason"
+                    LOSS_N=$((LOSS_N + 1))
+                fi
+                p_state=$level
+                last_push=$TS
+            fi
+        elif [ "$p_state" != "$level" ]; then
+            # 等级变了
+            if [ "$level" = "down" ]; then
+                # 丢包恶化成彻底不可达：不等去抖，立刻补一条
                 DOWN_LIST="$DOWN_LIST
 · $ex · $tg —— $reason"
                 DOWN_N=$((DOWN_N + 1))
-                p_state=bad
-                last_push=$TS
+            else
+                # down → loss：连通恢复了但还没好干净，按恢复推一条
+                UP_LIST="$UP_LIST
+· $ex · $tg（已恢复连通，仍有丢包）"
+                UP_N=$((UP_N + 1))
             fi
+            p_state=$level
+            last_push=$TS
         elif [ "$ALERT_COOLDOWN" -gt 0 ] && [ $((TS - p_push)) -ge "$ALERT_COOLDOWN" ]; then
-            # 一直没好，隔一段时间再提醒一次
-            DOWN_LIST="$DOWN_LIST
+            # 同等级一直没好转，且显式设了重发间隔才再提醒一次
+            if [ "$level" = "down" ]; then
+                DOWN_LIST="$DOWN_LIST
 · $ex · $tg —— $reason（仍未恢复）"
-            DOWN_N=$((DOWN_N + 1))
+                DOWN_N=$((DOWN_N + 1))
+            else
+                LOSS_LIST="$LOSS_LIST
+· $ex · $tg —— $reason（仍未好转）"
+                LOSS_N=$((LOSS_N + 1))
+            fi
             last_push=$TS
         fi
         set_state "$key" "$p_state" "$cont" "$last_push"
     else
-        if [ "$p_state" = "bad" ]; then
+        # 恢复正常：只有「彻底断过」才值得报一条，丢包抖动不报恢复
+        if [ "$p_state" = "down" ]; then
             UP_LIST="$UP_LIST
 · $ex · $tg"
             UP_N=$((UP_N + 1))
@@ -235,13 +283,13 @@ done
 NOW=$(date '+%m-%d %H:%M:%S')
 
 if [ "$DOWN_N" -gt 0 ]; then
-    if [ "$DOWN_N" -eq 1 ]; then
-        send_alert "【线路监测】$DOWN_N 项异常" "$(printf '%s' "$DOWN_LIST" | sed '1d')
+    send_alert "【线路监测】$DOWN_N 项不可达" "$(printf '%s' "$DOWN_LIST" | sed '1d')
 时间 $NOW"
-    else
-        send_alert "【线路监测】$DOWN_N 项异常" "$(printf '%s' "$DOWN_LIST" | sed '1d')
+fi
+
+if [ "$LOSS_N" -gt 0 ]; then
+    send_alert "【线路监测】$LOSS_N 项质量异常" "$(printf '%s' "$LOSS_LIST" | sed '1d')
 时间 $NOW"
-    fi
 fi
 
 if [ "$UP_N" -gt 0 ] && [ "$ALERT_RECOVER" = "1" ]; then

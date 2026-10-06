@@ -47,6 +47,13 @@ chmod +x /www/cgi-bin/lm-config /www/cgi-bin/lm-rate
 cp "$SRC/etc/init.d/linemon" /etc/init.d/linemon
 chmod +x /etc/init.d/linemon
 
+# 修「本机电信 IPv6 被 mwan3 策略路由丢弃」（看板上 v6-pppoe-wan2|* 恒 FAIL 的假阴性）
+# 详见 deploy/etc/hotplug.d/iface/99-lm-v6-rule 头部注释
+mkdir -p /etc/hotplug.d/iface
+cp "$SRC/etc/hotplug.d/iface/99-lm-v6-rule" /etc/hotplug.d/iface/99-lm-v6-rule
+chmod +x /etc/hotplug.d/iface/99-lm-v6-rule
+sh /etc/hotplug.d/iface/99-lm-v6-rule apply 2>/dev/null || true
+
 # LuCI 入口：菜单 + 权限 + 客户端 JS 视图（把看板嵌进 OpenWrt 管理界面）
 # 本固件 LuCI 走客户端渲染，视图必须放在 /www/luci-static/resources/view/<path>.js，
 # 旧的 /usr/lib/lua/luci/view/<path>.htm 服务端模板路径无效（会 404）。

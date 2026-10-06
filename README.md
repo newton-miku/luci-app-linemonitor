@@ -746,6 +746,29 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
     （轮询后推进窗口）要分三种情况——盖满全量就跟着新数据放宽、右端贴着最新点就等宽平移、
     停在历史段就原地不动只做 clamp，判据容差取 1 秒（采样间隔 60 秒）。
 
+64. **停掉一个 WAN 接口，会把它的 IPv6 采集一起带走**。排查「除电信 IPv4 外全断」时把
+    `network.wan6` 关掉（为了掐断上游那台双线设备顺着 `eth1` 灌下来的电信 PD），代价是
+    `eth1` 只剩 `fe80::44ee:91ff:fe20:22b2/64` link-local —— `v6_src_of()` 是
+    `ip -6 addr show dev <if> scope global` 取第一个非 `fc`/`fd` 地址，取不到就直接空，
+    于是 `v6-eth1|阿里v6` / `移动v6` / `国际v6` 三条目标全变 `FAIL,100`，看板上看起来像
+    「移动 IPv6 没了」。恢复时 `reqprefix='no'` 必须留着：只要地址不要 PD，就不会再被
+    上游灌进电信前缀（实测恢复后 `ip -6 route show default` 里没有任何 `from 240e:… dev eth1`）。
+
+65. **mwan3 会给本机发出的 IPv6 包打 mark，把电信 v6 送进一张没有 default 的策略表**。
+    症状极具误导性：看板上 `v6-pppoe-wan2|*` 恒为 `FAIL,100`，但 LAN 客户端走电信 v6
+    完全正常（`curl -6 https://www.taobao.com` → `http=200`）。根因链是
+    `ip6tables -t mangle OUTPUT -j mwan3_hook` → fwmark `0x400` →
+    `2004: from all fwmark 0x400/0x3f00 lookup 4` → 表 4 里
+    `unreachable 240e:358:a001:c3e7::/64 dev lo` 比 default 更具体 → 路由查找阶段直接
+    判不可达。而 `mwan3 status` 的 `Directly connected ipv6 networks:` 是**空的**，说明
+    mwan3 根本没把 `pppoe-wan2` 的 v6 前缀认到接口名下（proto 是 `dhcpv6`、地址由
+    `odhcp6c` 下发，mwan3 读不到 `ipv6-address`）。修法：
+    `ip -6 rule add from 240e::/16 lookup main priority 100` —— 只让源地址落在电信 v6
+    段的本机流量走 main，移动的 `2409::/16` 不匹配、继续走原策略。这条规则 `mwan3 restart`
+    不会清（实测保住），但**重启后会丢**，所以放进
+    `deploy/etc/hotplug.d/iface/99-lm-v6-rule`，任何接口事件都补一遍；
+    `install.sh` 里再用 `sh … 99-lm-v6-rule apply` 立刻生效一次，不必等接口事件。
+
 ## 界面风格
 
 新版看板**直接跑 antd v5 + ProComponents**，不再需要「手写类名去模仿 Pro」：

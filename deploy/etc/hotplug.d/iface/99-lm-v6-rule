@@ -1,0 +1,31 @@
+#!/bin/sh
+# 延迟监测：修复「路由器本机发电信 IPv6 被 mwan3 策略路由丢弃」的问题。
+#
+# 现象：路由器本机 ping6/curl 电信 v6 全部超时（看板上 v6-pppoe-wan2|* 恒为 FAIL），
+#       但 LAN 客户端走电信 v6 完全正常 —— 是假阴性，不是线路故障。
+# 原因：ip6tables -t mangle OUTPUT -j mwan3_hook 给本机 v6 包打上 fwmark 0x400，
+#       规则 `2004: from all fwmark 0x400/0x3f00 lookup 4` 把包送进表 4
+#       （pppoe-wan2 的策略表）；而 mwan3 没识别出 pppoe-wan2 的 v6 直连网络
+#       （`mwan3 status` 的 "Directly connected ipv6 networks:" 是空的），
+#       表 4 里 `unreachable 240e:358:a001:c3e7::/64 dev lo` 比 default 更具体，
+#       包在路由查找阶段就被判为不可达。
+# 修法：源地址落在 240e::/16（电信 v6 段）的本机流量优先走 main 表。
+#       移动 v6 是 2409::/16，不匹配这条，继续走原来的 mwan3 策略。
+# 验证：ping6 -I <pppoe-wan2 全局 v6 地址> 2400:3200::1 应 0% 丢包。
+
+apply_rule() {
+    ip -6 rule show 2>/dev/null | grep -q 'from 240e::/16 lookup main' && return 0
+    ip -6 rule add from 240e::/16 lookup main priority 100 2>/dev/null && \
+        logger -t lm-v6-rule "added: from 240e::/16 lookup main priority 100"
+}
+
+# 手动调用（install.sh 里 `sh 99-lm-v6-rule apply`）直接生效，不看接口事件
+if [ "$1" = "apply" ]; then
+    apply_rule
+    exit 0
+fi
+
+# 接口事件：mwan3 重写策略表时会连带清掉自定义规则，所以每次接口变动都补一遍
+case "$ACTION" in
+    ifup|ifupdate|ifdown) apply_rule ;;
+esac

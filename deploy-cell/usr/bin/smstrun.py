@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import signal
 import socket
 import sys
 import time
@@ -98,8 +99,28 @@ def read_conf(path, default=None):
         return default
 
 
+# 短信签名形如【腾讯科技】【中国移动】，几乎都贴在正文最前面。
+SIGN_RE = re.compile(r'[【\[]([^】\]\n]{1,20})[】\]]')
+
+
 def read_title():
-    return read_conf(TITLE_CONF, "CPE短信转发标题未定义")
+    """smstrun-title.conf 里配的固定标题。没配就是空串——空串代表「不设标题」。"""
+    return read_conf(TITLE_CONF, "")
+
+
+def sms_title(text):
+    """给一条短信挑标题。
+
+    优先用短信自带的签名（【腾讯科技】/【中国移动】这类），提不到再退回
+    smstrun-title.conf 里配的固定标题，都没配就返回空串。空标题时飞书 post
+    不带 title 字段，卡片上不会多出一行没意义的占位文字。
+    """
+    m = SIGN_RE.search(text or '')
+    if m:
+        inner = m.group(1).strip()
+        if inner:
+            return '【%s】' % inner
+    return read_title()
 
 
 def write_summary_to_file(count, out):
@@ -137,19 +158,13 @@ def remove_lock(lock_file):
 def push_feishu(message, url, title):
     """飞书自定义机器人：post 富文本，title 单独一行，正文整段塞进一个 text 节点。
 
+    title 为空时不带这个字段——带上空串飞书会在卡片顶部渲染一行空标题。
     第一次失败（多半是域名解析不出来）就先补一次 /etc/hosts 兜底再重试一发。
     """
-    payload = {
-        "msg_type": "post",
-        "content": {
-            "post": {
-                "zh_cn": {
-                    "title": title,
-                    "content": [[{"tag": "text", "text": message}]]
-                }
-            }
-        }
-    }
+    zh_cn = {"content": [[{"tag": "text", "text": message}]]}
+    if title:
+        zh_cn["title"] = title
+    payload = {"msg_type": "post", "content": {"post": {"zh_cn": zh_cn}}}
     for attempt in (1, 2):
         try:
             response = requests.post(url, json=payload, timeout=15)
@@ -168,7 +183,7 @@ def push_feishu(message, url, title):
 
 def push_pushplus(message, token, title):
     url = "http://www.pushplus.plus/send"
-    data = {"token": token, "title": title, "content": message}
+    data = {"token": token, "title": title or "短信转发", "content": message}
     try:
         response = requests.post(url, json=data, timeout=15)
         print("Response:\n", response.json())
@@ -176,6 +191,29 @@ def push_pushplus(message, token, title):
     except Exception as e:
         print("Error occurred: ", str(e))
         return False
+
+
+def valid_sender(s):
+    """发件人必须是 5~20 位的数字（可带前导 +）。
+
+    本模组 ME 里有一批未初始化的坏槽位，`AT+CMGL=4` 会把它们（连同行尾的 OK、
+    AT 回显）一起列出来，pdu_decoder 解出的发件人是乱码：`?7000000100000000`、
+    `6=88<4>4:3757435?>08=?=698:5<<;88<`、`<>67>705=025::25;`、`41?`。
+    真号码最短是 10086 这种 5 位短号，所以长度下限取 5。
+    """
+    return bool(re.fullmatch(r'\+?\d{5,20}', s or ''))
+
+
+def valid_time(t):
+    """发件时间形如 `10/05/26 03:51:55`，年份必须是 2018~2035。
+
+    坏槽位的时间戳在 1990~2099 之间乱跳（实测 05/31/92、12/06/99、12/29/97、
+    08/03/64、07/31/04、12/09/15），真短信的时间总是当前年份附近。
+    """
+    m = re.match(r'(\d{2})/(\d{2})/(\d{2})\s+\d{2}:\d{2}:\d{2}', t or '')
+    if not m:
+        return False
+    return 18 <= int(m.group(3)) <= 35
 
 
 def parse_blocks(out):
@@ -223,7 +261,11 @@ def parse_blocks(out):
             cur['body'].append(line.strip())
     if cur:
         blocks.append(cur)
-    return blocks
+    # 双保险：smstrun.sh 已按「PDU 十六进制 / 发件人 / 年份 / 段数」四道过滤过一遍，
+    # 这里再挡一次。万一机器上跑的还是没带过滤的老 smstrun.sh，靠这层兜底。
+    return [b for b in blocks
+            if valid_sender(b.get('from')) and valid_time(b.get('time'))
+            and int(b.get('segs', 0) or 0) <= 20]
 
 
 # 长短信分段缓冲：key -> {'segs': 总段数, 'parts': {段号: 正文}, 'idx': 首段序号, 'time': 发件时间}
@@ -243,7 +285,7 @@ def merge_sms(out):
     """
     blocks = parse_blocks(out)
     if not blocks:
-        return out                    # 本轮没有新短信，原样返回（通常就是空串）
+        return []                     # 本轮没有新短信
 
     # 先按分组键把本轮拿到的段落并进缓冲
     for b in blocks:
@@ -280,16 +322,45 @@ def merge_sms(out):
         if total and total > 1:
             lines.append('（长短信 %d 段%s）' % (total, '已完整拼接' if got >= total else '只收到 %d 段' % got))
         lines.append(body)
-        lines.append('------------------------------------------------------')
         out_lines.append('\n'.join(lines))
         del _pending[key]
 
     if not out_lines:
-        # 全部还差段：必须返回空串，不能把原始碎片回传。
-        # smstrun.py 是靠 "发件人" in out 判断要不要推送的，返回碎片就等于把没拼全的
-        # 分段当成完整短信推出去，正是这次要修的问题。
-        return ''
-    return '\n'.join(out_lines)
+        # 全部还差段：必须返回空列表，不能把原始碎片回传——调用方是靠返回内容判断
+        # 要不要推送的，返回碎片就等于把没拼全的分段当成完整短信推出去。
+        return []
+    return out_lines
+
+
+def run_smstrun():
+    """跑一轮采集，返回 stdout；卡住或出错返回 None。
+
+    sendat / pdu_decoder 都可能挂住（pdu_decoder 收不到换行时会一直挂在 read 上）。
+    超时后用 killpg 把整个进程组杀掉——只杀 sh 的话，它派生的 sendat / pdu_decoder
+    会变成孤儿继续挂着，一轮轮积累（实测见过同时 4 个 sh /usr/bin/smstrun.sh）。
+    start_new_session=True 让子进程单独成组，才能一次性收干净。
+    """
+    proc = subprocess.Popen(['sh', '/usr/bin/smstrun.sh'],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, start_new_session=True)
+    try:
+        stdout, stderr = proc.communicate(timeout=20)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            proc.kill()
+        try:
+            proc.communicate(timeout=5)
+        except Exception:
+            pass
+        print("smstrun.sh 执行超过 20 秒，已杀进程组并跳过本轮。")
+        return None
+    if proc.returncode != 0:
+        print("smstrun.sh 返回码 %s。stderr: %s"
+              % (proc.returncode, (stderr or '').strip()[:200]))
+        return None
+    return stdout
 
 
 def forward():
@@ -313,27 +384,20 @@ def forward():
         count = 0
         while True:
             try:
-                # 45 秒上限：smstrun.sh 里有 sendat / pdu_decoder，两者都可能卡住
-                # （实测 pdu_decoder 收不到换行时会一直挂在 read 上），
-                # 不加超时的话这一层 while 循环会永久卡死、再也收不到短信。
-                result = subprocess.run(['sh', '/usr/bin/smstrun.sh'],
-                                        capture_output=True, text=True, check=True,
-                                        timeout=45)
-                out = merge_sms(result.stdout)
-                if "发件人" in out:
-                    title = read_title()
-                    if feishu_url:
-                        push_feishu(out, feishu_url, title)
-                    else:
-                        push_pushplus(out, token, title)
-                    count += 1
-                    write_summary_to_file(count, out)
-                else:
-                    print("未检测到新消息，继续检测...")
-            except subprocess.CalledProcessError as e:
-                print(f"执行命令失败: {e}. 返回值: {e.returncode}. 错误信息: {e.stderr}")
-            except subprocess.TimeoutExpired:
-                print("smstrun.sh 执行超过 45 秒，已跳过本轮（sendat/pdu_decoder 卡住）。")
+                raw = run_smstrun()
+                if raw is not None:
+                    msgs = merge_sms(raw)
+                    if not msgs:
+                        print("未检测到新消息，继续检测...")
+                    for msg in msgs:
+                        # 逐条推送：标题取自各自的签名，多条短信不会共用一个标题
+                        title = sms_title(msg)
+                        if feishu_url:
+                            push_feishu(msg, feishu_url, title)
+                        else:
+                            push_pushplus(msg, token, title)
+                        count += 1
+                        write_summary_to_file(count, msg)
             except UnicodeDecodeError as e:
                 print(f"解码错误: {e}. 尝试重新运行。")
             except Exception as e:

@@ -33,8 +33,9 @@ for b in m.parse_blocks(raw):
     print("  idx=%s from=%r time=%r ref=%s seg=%s/%s body=%r"
           % (b.get("idx"), b.get("from"), b.get("time"), b.get("ref"),
              b.get("seg"), b.get("segs"), "".join(b["body"])[:40]))
-out = m.merge_sms(raw)
-print("merge 结果长度 =", len(out))
-print("含『发件人』 =", "发件人" in out)
-print(out[:600])
+msgs = m.merge_sms(raw)
+print("merge 结果条数 =", len(msgs))
+for one in msgs:
+    print("标题 =", repr(m.sms_title(one)))
+    print(one[:600])
 PYEOF

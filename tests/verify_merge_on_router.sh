@@ -11,15 +11,15 @@ def blk(idx, frm, tm, ref, seg, segs, body):
     s = "第%s条短信\n发件人:%s\n发件时间:%s\n" % (idx, frm, tm)
     if ref is not None:
         s += "Reference number: %s\nSMS segment %d of %d\n" % (ref, seg, segs)
-    s += body + "\n" + "-" * 54
+    s += body + "\n" + "-" * 54 + "\n"
     return s
 
 def feed(txt, tag):
     r = m.merge_sms(txt)
-    n = r.count("发件人:")
-    print("[%s] 推送条数=%d  返回长度=%d" % (tag, n, len(r)))
-    if r:
-        print(r)
+    print("[%s] 推送条数=%d" % (tag, len(r)))
+    for one in r:
+        print("标题 = %r" % m.sms_title(one))
+        print(one)
     print("-" * 60)
     return r
 
@@ -36,7 +36,7 @@ feed(blk("5", F, T, "163", 2, 3, "MB（编号：25JT206613），资费0元，"),
 print("### 轮3：普通单段短信 → 应照常推送")
 feed(blk("7", "10658888601", "10/04/26 17:05:27", None, 0, 0, "HX/ECAp2f 拒收请回复R。"), "轮3")
 
-print("### 轮4：空输入 → 返回空串")
+print("### 轮4：空输入 → 返回空列表")
 feed("", "轮4")
 
 print("### 轮5：超时兜底（把 at 改成很久以前）")

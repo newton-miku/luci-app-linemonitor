@@ -1,6 +1,9 @@
 #!/bin/sh
 # 走一遍 smstrun.py 的完整转发链路（不碰真实短信，直接喂一条仿真输出）。
 # 在路由器上执行：sh /tmp/send_feishu_test.sh
+#
+# 顺便验证新的标题逻辑：正文里带【腾讯科技】这种签名时，飞书卡片的标题
+# 直接用签名本身，不再用 smstrun-title.conf 里那句固定文案。
 cd /usr/bin || exit 1
 python3 - <<'PY'
 import sys
@@ -14,18 +17,20 @@ spec.loader.exec_module(m)
 url = m.read_conf(m.FEISHU_CONF)
 print('飞书配置:', (url[:48] + '…') if url else '(空)')
 print('PPS+ token:', '(已配置)' if m.read_conf(m.TOKEN_CONF) else '(未配置)')
-print('转发标题:', m.read_title())
+print('固定标题配置:', repr(m.read_title()))
 
-msg = '发件人:10086\n发件时间:26/10/02,10:30:00+32\n\n【链路自检】这是一条来自 smstrun.py 的仿真测试消息，用于确认飞书转发可用。'
+msg = ('发件人:10693041407221460\n'
+       '发件时间:10/06/26 11:20:00\n'
+       '【腾讯科技】您的验证码是 482913，5 分钟内有效。')
+title = m.sms_title(msg)
+print('---')
+print('挑出的标题:', repr(title))
 if url:
     m.ensure_hosts_entry('open.feishu.cn')
-    ok = m.push_feishu(msg, url, '【内置蜂窝】转发自检')
-    print('飞书推送:', 'OK' if ok else 'FAILED')
+    print('飞书推送:', 'OK' if m.push_feishu(msg, url, title) else 'FAILED')
 else:
-    print('未配置飞书，走 PPS+ 分支')
     tok = m.read_conf(m.TOKEN_CONF)
+    print('未配置飞书，走 PPS+ 分支:', '已配置' if tok else '未配置')
     if tok:
-        print('PPS+ 推送:', 'OK' if m.push_pushplus(msg, tok, m.read_title()) else 'FAILED')
-    else:
-        print('两个后端都没配，forward() 会直接返回')
+        print('PPS+ 推送:', 'OK' if m.push_pushplus(msg, tok, title) else 'FAILED')
 PY

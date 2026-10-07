@@ -70,12 +70,14 @@ LuCI 侧栏「服务选项 → 线路监测 → 延迟看板」嵌的就是这�
   十几条线叠在一起根本看不清，所以干脆拆开。
 - **实时TCP流** — 内网设备发起的 TCP 流，标注出口、服务名、状态；卡住的 `SYN_SENT` 整行标红
 
-总览页顶部还有一张 **`实时速率`** 卡：`lm_rate.sh` 每 2 秒读一次 `/proc/net/dev` 的累计计数器，
-与上一次相减除以间隔得到各接口的 rx/tx 速率，前端每 2 秒拉一次 `/cgi-bin/lm-rate`。
-默认采 `eth1 pppoe-wan2 br-lan` 三个口（`RATE_IFACES` 可改，留空就只采出口）。
-接口名到显示名的映射跟看板一样取自 `EXITS` 的第二字段，`br-lan` 这种不在出口列表里的就原样显示接口名。
-数字是**最近一个采样间隔的平均值**，不是瞬时值；空闲时的几 KB/s 属于协议开销与后台同步。
+总览页顶部还有一张 **`实时速率`** 卡：`lm_rate.sh` 每 2 秒采样一次，前端每 2 秒拉一次
+`/cgi-bin/lm-rate`。默认采 `eth1 pppoe-wan2 br-lan` 三个口（`RATE_IFACES` 可改）。
+接口名到显示名的映射跟看板一样取自 `EXITS` 的第二字段，`br-lan` 这种不在出口列表里的
+就原样显示接口名。数字是**最近一个采样间隔的平均值**，不是瞬时值。
 **结果写 `/tmp/lm_rate.json`（RAM）**——2 秒一次往 overlay 上写会把 flash 磨坏。
+
+**取数用的是 `/proc/net/nf_conntrack`，不是 `/proc/net/dev`。** 原因见踩坑 57：开了
+硬件 NAT 卸载之后，接口计数器根本看不见那些流量。
 
 统计表跟着每条出口页走，粒度是**线路 × 协议 × 目标**；总览页那张表把所有出口拼在一起，用「线路」列分组。
 IPv6 卡片显示的是**平均延迟数字**（不是「可达/不可达」——那个词没信息量，有数字就给数字）。
@@ -768,6 +770,47 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
     不会清（实测保住），但**重启后会丢**，所以放进
     `deploy/etc/hotplug.d/iface/99-lm-v6-rule`，任何接口事件都补一遍；
     `install.sh` 里再用 `sh … 99-lm-v6-rule apply` 立刻生效一次，不必等接口事件。
+66. **开了硬件 NAT 卸载，`/proc/net/dev` 里 99.9% 的流量是看不见的**。症状是「速率卡上
+    电信口一直显示几 KB/s，可是明明在下载」。`lsmod` 里出现 `mtkhnat`，同时
+    `/sys/kernel/debug/hnat/hook_toggle` 的值是 `enabled`（关掉它 `all_entry` 里的
+    `state` 就全是 `BIND` 变 `UNBIND`，而且不再更新）。实测一次 10 MB/s 的下载：
+    `eth0`（DSA/QDMA 父设备）rx 10959 KB/s，`pppoe-wan2` rx 5.56 KB/s，`br-lan` rx 513 KB/s
+    —— 软件接口全加一起不到 2 MB/s。**LuCI 自带的「状态 → 实时信息」也救不了**：
+    `/usr/libexec/rpcd/luci` 的 `getRealtimeStats` 最终调 `luci-bwc`，而 `/usr/bin/luci-bwc`
+    的字符串表里数据源只有 `/sys/class/net/%s/statistics/%s`（同一个计数器），
+    所以 LuCI 页面上的数字同样是错的 —— 别指望抄它。
+67. **要按出口分速率，就用 conntrack 的 `mark=`，别去解析 HNAT 的 tuple**。
+    `/proc/net/nf_conntrack` 里每条连接的 `bytes` 在卸载后**仍然更新**（这条是关键，
+    `diag_ct.sh` 实测下载流的增量对得上 `eth0`），而且自带 `mark=` —— 那正是 mwan3 给每个
+    出口打的 fwmark，`EXITS` 第 4 列已经配了（`256`=eth1、`512,768`=pppoe-wan2），
+    直接就是出口归属。解析 `/sys/kernel/debug/hnat/all_entry` 也能算，但那条路要自己猜：
+    - `=>` 后半段的 IPv6 字面量**零填充格式跟 `ip -6 addr` 给的不一样**：entry 里写
+      `240e0359:a0539e00`（32 位组大写带前导零），`ip -6 addr` 给 `240e:359:a053:9e00`，
+      直接字符串匹配必然失配，得先规范化成「每组补零到 4 位 + 大写」。
+    - 出方向 entry 的 `=>` 部分是**垃圾值**（如 `192.168.66.21:5711->23.212.62.96:443=>36.14.3.89:37221->160.83.158.0:14943`），
+      拿不到 WAN IP，只能回头用 part1 的 `remote ip:port` 去查另一条带 WAN 的 entry 建的映射表。
+    相比之下 conntrack 的行格式是规范的一等公民。
+68. **conntrack 的方向：第一个 `bytes` 是发起方向**。
+    `src=192.168.66.21 dst=23.212.62.96 ... bytes=A ... src=23.212.62.96 dst=192.168.66.21 ... bytes=B`
+    中，A 是内网→外网（上传），B 是外网→内网（下载）；`packets` 同理。用 `in_lan(dst)`
+    判断谁发起的，外网主动连入内网时要对调。key 必须是**完整五元组**
+    （`mark|src|sport|dst|dport`）—— 只用 `mark|src` 会让同一源的不同端口互相覆盖，
+    实测能把 10 MB/s 算成 965 MB/s。
+69. **conntrack 的速率必须逐连接差分，不能按 mark 汇总后再差分**。bytes 是每连接单调递增的，
+    把一个 mark 下的连接全加起来，只要有一条连接关闭，这个和就变小 → 差分为负 → 夹 0 →
+    **整个出口被清零**（哪怕同时还有别的连接在跑）。症状是速率卡偶尔闪一下 0。
+    状态文件按五元组逐条存，只对「还活着且上次也见过」的连接求差；新连接不计
+    （否则会把它的整个生命周期当成这一窗口的增量）。
+70. **临时文件名带 `$$`，而且 `rm -rf $WORK` 不会带走 `$WORK.snap`**。守护进程每 2 秒跑一次，
+    排查时也会手工直跑，共用固定文件名会互相 `rm` 掉对方的中间文件 ——
+    实测表现是「有流量却随机报 0」，很容易误判成算法错。`cleanup()` 里必须把每个派生文件
+    单独列出来，漏一个就每 2 秒积 27 KB，tmpfs 会被撑爆。
+71. **awk 的输入文件必须存在，否则整段脚本静默失效**。首跑时 `/tmp/lm_rate.state` 还没有，
+    `awk … "$STATE" /proc/net/dev` 会直接报错退出，后面的 `mv` 就不执行，`/tmp/lm_rate.json`
+    停在旧值不动（看起来像「速率不刷新」）。补一行 `[ -f "$STATE" ] || : > "$STATE"`。
+    另外 `awk` 的 `FILENAME == ARGV[1]` 判据要配合 `FNR == 1` 的特殊行一起用，
+    写成 `$1 == "@"` 会在首行是 `@1791354112` 时判不成立，`dt` 退化成 `now` 本身，
+    整除后速率全是 0。
 
 ## 界面风格
 
@@ -833,3 +876,10 @@ bgContainer `#141414`、bgElevated `#1f1f1f`、borderSecondary `#303030`。
 | `apply_target_matrix.sh` | 把真机上已有的 `targets.conf` 从「目标分组」迁到「显式目标清单」（升级必跑，见设置页那节） |
 | `verify_target_groups.sh` | 跑真脚本、只把 `ping`/`curl`/`nslookup` 换成记录桩，核对「哪个出口测了哪些目标」 |
 | `fix_target_groups_http.sh` | 补上 `HTTP_TARGETS`/`ICMP6_TARGETS` 漏掉的分组前缀（只改 `EXITS` 会漏测，见踩坑 57） |
+| `diag_hwnat.sh` | 全量接口计数器 + HNAT debugfs 清单，用来确认「流量去哪了」 |
+| `diag_hnat2.sh` | 各类 HNAT 计数源的格式（`hnat_stats`/`hnat_entry`/`all_entry`/`esw_cnt`） |
+| `diag_hnat3.sh` / `diag_hnat4.sh` / `diag_hnat5.sh` | HNAT `all_entry` 分出口、判方向、查最大增量 entry 的 tuple |
+| `diag_ct.sh` ~ `diag_ct5.sh` | 验证 conntrack 的 bytes 在 HNAT 卸载后仍更新，并测出完整五元组 key 才能分方向 |
+| `diag_rate_diff.sh` | 逐连接差分的 key 匹配率诊断（两边都有 / 只在新快照 / 只在旧快照） |
+| `diag_luci_overview.sh` | 查 LuCI「状态总览」怎么统计带宽——结论是 `luci-bwc` 只读 `/sys/class/net`，同样被 HNAT 绕过 |
+| `verify_rate.sh` ~ `verify_rate5.sh` | 真机验证速率修复：语法、基线、耗时、残留文件、20 秒窗口内 conntrack 与接口计数对拍 |

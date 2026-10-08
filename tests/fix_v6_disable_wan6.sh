@@ -1,14 +1,14 @@
 #!/bin/sh
-echo "=== 1) 先在 eth1 上挂一个静态地址，强制走电信源测一次 ==="
-ping6 -c 3 -W 3 -I 240e:359:a053:9e00::1 240e:f:a::6 2>&1 | tail -n 4
-curl -6 -s -o /dev/null -w "curl6(src=240e:359:a053:9e00::1) http=%{http_code} time=%{time_total}\n" --interface 240e:359:a053:9e00::1 --max-time 10 https://ipv6.baidu.com
+echo "=== 1) 先在 wan 上挂一个静态地址，强制走出口A源测一次 ==="
+ping6 -c 3 -W 3 -I 2001:db8:9abc:def0::1 240e:f:a::6 2>&1 | tail -n 4
+curl -6 -s -o /dev/null -w "curl6(src=2001:db8:9abc:def0::1) http=%{http_code} time=%{time_total}\n" --interface 2001:db8:9abc:def0::1 --max-time 10 https://ipv6.baidu.com
 
 echo
 echo "=== 2) 看看内核给 2400:3200::1 选哪条路 ==="
 ip -6 route get 2400:3200::1 2>&1 | head -n 3
 
 echo
-echo "=== 3) 禁用 network.wan6（移动 v6 断 123h，且上游在灌错 PD） ==="
+echo "=== 3) 禁用 network.wan6（出口B v6 断 123h，且上游在灌错 PD） ==="
 uci set network.wan6.disabled='1'
 uci commit network
 uci show network.wan6 | grep -E 'disabled|reqprefix'
@@ -28,8 +28,8 @@ echo "=== 6) br-lan 地址 ==="
 ip -6 addr show br-lan | grep inet6
 
 echo
-echo "=== 7) eth1 是否还有 v6 地址 ==="
-ip -6 addr show eth1 | grep inet6
+echo "=== 7) wan 是否还有 v6 地址 ==="
+ip -6 addr show wan | grep inet6
 
 echo
 echo "=== 8) 从路由器测 v6（不指定源） ==="

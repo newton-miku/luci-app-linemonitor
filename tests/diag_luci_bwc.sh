@@ -16,7 +16,7 @@ echo "--- -i eth0 ---"
 luci-bwc -i eth0 2>&1 | head -20
 echo "--- -i BLUE4 ---"
 luci-bwc -i BLUE4 2>&1 | head -20
-echo "--- -i pppoe-wan2 ---"
-luci-bwc -i pppoe-wan2 2>&1 | head -20
+echo "--- -i pppoe-wan ---"
+luci-bwc -i pppoe-wan 2>&1 | head -20
 echo "--- -i br-lan ---"
 luci-bwc -i br-lan 2>&1 | head -20

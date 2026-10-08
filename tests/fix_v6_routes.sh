@@ -1,5 +1,5 @@
 #!/bin/sh
-# 重算 network，清掉指向 eth1 的伪默认路由，确认 v6 真正走电信
+# 重算 network，清掉指向 wan 的伪默认路由，确认 v6 真正走出口A
 echo "=== 1) 改前：v6 默认路由 ==="
 ip -6 route show default
 
@@ -33,7 +33,7 @@ echo "=== 8) br-lan 地址 ==="
 ip -6 addr show br-lan | grep inet6
 
 echo
-echo "=== 9) 从路由器测电信 v6 ==="
+echo "=== 9) 从路由器测出口A v6 ==="
 curl -6 -s -o /dev/null -w "curl6 http=%{http_code} time=%{time_total}\n" --max-time 10 https://ipv6.baidu.com
 curl -4 -s -o /dev/null -w "curl4 http=%{http_code} time=%{time_total}\n" --max-time 10 https://www.baidu.com
 

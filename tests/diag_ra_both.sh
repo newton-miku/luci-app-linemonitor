@@ -1,11 +1,11 @@
 #!/bin/sh
-# 双向抓包：上游（eth1 / pppoe-wan2）有没有 RA，LAN（br-lan）有没有 RA 被中继进来
-echo "=== 1) 上游 eth1 的 RA（15 秒） ==="
-timeout 15 tcpdump -i eth1 -n -vv 'icmp6 and ip6[40] == 134' 2>&1 | head -n 30
+# 双向抓包：上游（wan / pppoe-wan）有没有 RA，LAN（br-lan）有没有 RA 被中继进来
+echo "=== 1) 上游 wan 的 RA（15 秒） ==="
+timeout 15 tcpdump -i wan -n -vv 'icmp6 and ip6[40] == 134' 2>&1 | head -n 30
 
 echo
-echo "=== 2) 上游 pppoe-wan2 的 RA（15 秒） ==="
-timeout 15 tcpdump -i pppoe-wan2 -n -vv 'icmp6 and ip6[40] == 134' 2>&1 | head -n 30
+echo "=== 2) 上游 pppoe-wan 的 RA（15 秒） ==="
+timeout 15 tcpdump -i pppoe-wan -n -vv 'icmp6 and ip6[40] == 134' 2>&1 | head -n 30
 
 echo
 echo "=== 3) LAN br-lan 的 RA（20 秒） ==="

@@ -10,7 +10,7 @@ echo "=== /tmp/lm_rate.state ==="
 cat /tmp/lm_rate.state 2>/dev/null || echo "(无)"
 echo
 echo "=== /proc/net/dev 关心接口 ==="
-grep -E 'eth1|pppoe-wan2|br-lan|eth0|tailscale' /proc/net/dev
+grep -E 'wan|pppoe-wan|br-lan|eth0|组网客户端' /proc/net/dev
 echo
 echo "=== 进程 ==="
 ps w | grep -E '[l]m_rate|[l]ine_daemon|[l]ine_monitor'

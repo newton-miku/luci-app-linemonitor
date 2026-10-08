@@ -4,7 +4,8 @@
 # 出口、目标、参数全部来自 /etc/line-monitor/targets.conf，这里不写死任何出口。
 # 踩坑注意:
 #   1. 有的出口测 HTTP 目标前要临时加源地址策略路由（配置里填了「源IP」才需要），测完删除
-#   2. 系统 DNS 走 tailscale 解析不了公网域名，须显式 nslookup <域名> $PUBLIC_DNS
+#   2. 系统 DNS 若被组网客户端的 MagicDNS 接管就解析不了公网域名，
+#      须显式 nslookup <域名> $PUBLIC_DNS
 #   3. busybox sed/awk 正则坑：解析 ping 输出用 awk index()+split()，不用 sed
 #   4. 变量别叫 ip，会把 ip 命令遮蔽掉，后面调用 ip rule 就废了
 
@@ -45,16 +46,16 @@ refresh_dashboard_config() {
 
 # 读接口的全局 IPv6 源地址（后面 ping6 用它，不是用接口名）
 #
-# 为什么不能用接口名：本固件 busybox 1.33 的 `ping6 -I pppoe-wan2` 一律报
+# 为什么不能用接口名：本固件 busybox 1.33 的 `ping6 -I pppoe-wan` 一律报
 # "sendto: Permission denied" —— 那是 PPPoE 点对点接口，SO_BINDTODEVICE 绑不上。
 # 换成 `ping6 -I <该接口的全局 IPv6 地址>` 立刻就通（实测 28ms 0% 丢包）。
 # 而 IPv6 路由表里每个出口的默认路由本来就带 `from <前缀>`：
-#     default from 2409:8970:9d31:4f78::/64 via ... dev eth1      metric 384
-#     default from 240e:358:a001:e066::/64 via ... dev pppoe-wan2 metric 512
+#     default from <某前缀>::/64 via ... dev wan      metric 384
+#     default from <另一前缀>::/64 via ... dev pppoe-wan metric 512
 # 所以源地址一选定，内核自己就选对出口了，根本不需要绑设备。
 #
 # 前缀由运营商下发、会变，所以跟 v4 的 auto 一样必须现读，不能写死。
-# tailscale0 的 fd7a::/128 是 ULA，判掉；链路本地 fe80:: 也不是出口地址。
+# 组网隧道接口上的 fd..::/8 是 ULA，判掉；链路本地 fe80:: 也不是出口地址。
 v6_src_of() {
     ip -6 addr show dev "$1" scope global 2>/dev/null |
         awk '/inet6 /{sub(/\/.*/,"",$2); if ($2 !~ /^f[cd]/) { print $2; exit }}'
@@ -116,7 +117,7 @@ curl_parse() {
         *) echo "FAIL 1"; return ;;
     esac
     # rc=52/56 时 curl 可能压根不填 -w，$ms 会是空串——直接过 awk 会算出 "0 1"，
-    # 看板把 0 当合法 0ms 画在底部（真机实测移动侧四个 HTTP 目标各有 500+ 条这种脏数据）。
+    # 看板把 0 当合法 0ms 画在底部（真机实测某些出口的 HTTP 目标各有 500+ 条这种脏数据）。
     # 连接耗时不可能真的是 0，所以值 <= 0 一律按失败记。
     # 0.041234 -> 41
     echo "$ms" | awk '{ if ($1 + 0 <= 0) { printf "FAIL 1\n" } else { printf "%d 0\n", $1*1000 } }'
@@ -208,7 +209,7 @@ for e in $EXITS; do
         EX_SRC=$(ip -4 addr show "$EX_IF" 2>/dev/null | awk '/inet /{sub(/\/.*/,"",$2); print $2; exit}')
     fi
     if [ -n "$EX_SRC" ]; then
-        # 表号也要按接口推，硬编码 lookup 1 会把别的出口的流量塞进移动的表
+        # 表号也要按接口推，硬编码 lookup 1 会把别的出口的流量塞进这个出口的表
         for tb in 1 2 3 4 5; do
             if ip route show table "$tb" 2>/dev/null | grep -q "dev $EX_IF"; then
                 rule_tbl=$tb

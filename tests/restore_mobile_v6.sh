@@ -18,8 +18,8 @@ ifup wan6 2>&1
 sleep 20
 
 echo
-echo "=== eth1 的 v6 地址 ==="
-ip -6 addr show dev eth1
+echo "=== wan 的 v6 地址 ==="
+ip -6 addr show dev wan
 
 echo
 echo "=== ubus wan6 状态 ==="
@@ -30,13 +30,13 @@ echo "=== v6 默认路由 ==="
 ip -6 route show default
 
 echo
-echo "=== 移动 v6 连通性 ==="
-V6E=$(ip -6 addr show dev eth1 scope global 2>/dev/null | awk '/inet6 /{sub(/\/.*/,"",$2); if ($2 !~ /^f[cd]/) { print $2; exit }}')
-echo "eth1 全局 v6 源: [${V6E:-无}]"
+echo "=== 出口B v6 连通性 ==="
+V6E=$(ip -6 addr show dev wan scope global 2>/dev/null | awk '/inet6 /{sub(/\/.*/,"",$2); if ($2 !~ /^f[cd]/) { print $2; exit }}')
+echo "wan 全局 v6 源: [${V6E:-无}]"
 if [ -n "$V6E" ]; then
     echo "-- 阿里 v6 DNS 2400:3200::1 --"
     ping6 -c 3 -W 2 -I "$V6E" 2400:3200::1 2>&1 | tail -3
-    echo "-- 移动 v6 DNS 2409:8080:1::1 --"
+    echo "-- 出口B v6 DNS 2409:8080:1::1 --"
     ping6 -c 3 -W 2 -I "$V6E" 2409:8080:1::1 2>&1 | tail -3
     echo "-- OpenDNS 2620:0:ccc::2 --"
     ping6 -c 3 -W 2 -I "$V6E" 2620:0:ccc::2 2>&1 | tail -3
@@ -51,5 +51,5 @@ echo "=== odhcp6c 进程 ==="
 ps w | grep odhcp6c | grep -v grep
 
 echo
-echo "=== 会不会又出现走 eth1 的 v6 默认路由（PD 泄漏）==="
-ip -6 route show default | grep eth1 || echo "OK：没有走 eth1 的 v6 默认路由"
+echo "=== 会不会又出现走 wan 的 v6 默认路由（PD 泄漏）==="
+ip -6 route show default | grep wan || echo "OK：没有走 wan 的 v6 默认路由"

@@ -3,10 +3,10 @@
 # 数据源: /proc/net/nf_conntrack
 #
 # 字段位置: $6=TCP状态 $7=src $8=dst $9=sport $10=dport，mark 在 $11 之后。
-# $7/$8 的值形如 "src=192.168.66.21"（自带前缀），必须先剥掉才能比较和查表。
+# $7/$8 的值形如 "src=192.168.1.100"（自带前缀），必须先剥掉才能比较和查表。
 #
 # 出口判定: 靠 conntrack 的 fwmark，映射表来自 targets.conf 里 EXITS 的第 4 列。
-# 输出的是**接口名**（eth1 / pppoe-wan2），"移动"/"电信"这类显示名由看板决定，
+# 输出的是**接口名**（wan / pppoe-wan），显示名由看板决定，
 # 这样改名字不用动采集脚本。
 #
 # 为什么整段用 awk 而不是 shell 循环: conntrack 常态 150+ 行，
@@ -41,7 +41,7 @@ IPMAP=/tmp/lm_ipmap.txt
 OUT=/www/lm/tcp.json
 TS=$(date +%s)
 
-# EXITS 的 mark 列 -> "256:eth1,512:pppoe-wan2,768:pppoe-wan2"
+# EXITS 的 mark 列 -> "256:wan,512:pppoe-wan,768:pppoe-wan"
 MARKMAP=""
 for e in $EXITS; do
     m_if=$(echo "$e" | cut -d'|' -f1)

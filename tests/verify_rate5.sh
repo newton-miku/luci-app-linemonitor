@@ -40,7 +40,7 @@ BEGIN{
 }' /proc/net/nf_conntrack
 }
 snapdev() {
-    awk '/^ *(eth0|br-lan|pppoe-wan2|eth1|BLUE4|rax0):/{n=$1;gsub(/:/,"",n);print n,$2,$10}' /proc/net/dev
+    awk '/^ *(eth0|br-lan|pppoe-wan|wan|BLUE4|rax0):/{n=$1;gsub(/:/,"",n);print n,$2,$10}' /proc/net/dev
 }
 
 snapct > $W.a

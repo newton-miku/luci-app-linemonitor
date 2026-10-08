@@ -1,5 +1,5 @@
 #!/bin/sh
-# 掐断 eth1 上游灌进来的电信 PD，并删掉残留的 relay master
+# 掐断 wan 上游灌进来的出口A PD，并删掉残留的 relay master
 echo "=== 0) 备份 ==="
 BK=/tmp/uci-backup2-$(date +%s).txt
 uci export > "$BK"
@@ -41,7 +41,7 @@ ps w | grep -E 'odhcpd|odhcp6c' | grep -v grep
 echo
 echo "=== 7) 从路由器测 v6 ==="
 curl -6 -s -o /dev/null -w "curl6 http=%{http_code} time=%{time_total}\n" --max-time 10 https://ipv6.baidu.com
-echo "--- ping6 电信DNS ---"
+echo "--- ping6 出口ADNS ---"
 ping6 -c 3 -W 3 240e:f:a::6 2>&1 | tail -n 3
 
 echo

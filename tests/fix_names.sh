@@ -12,12 +12,12 @@ sed -i 's/字节=/抖音=/g' "$LOG"
 
 echo "=== 改名后 ==="
 tr ' ' '\n' < "$LOG" | grep -c '字节='
-echo "--- eth1 目标名分布 ---"
-tr ' ' '\n' < "$LOG" | grep '^eth1|' | cut -d'=' -f1 | sort | uniq -c | sort -rn
+echo "--- wan 目标名分布 ---"
+tr ' ' '\n' < "$LOG" | grep '^wan|' | cut -d'=' -f1 | sort | uniq -c | sort -rn
 
 echo
 echo "=== 跑一次采集（看 auto 源地址是否生效）==="
 sh /usr/bin/line_monitor.sh
-tail -n 1 "$LOG" | tr ' ' '\n' | grep '^eth1|'
+tail -n 1 "$LOG" | tr ' ' '\n' | grep '^wan|'
 echo "--- 残留的 3000 优先级策略路由（应为空）---"
 ip rule | grep 3000

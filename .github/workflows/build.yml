@@ -23,25 +23,27 @@ jobs:
         run: |
           set -e
           fail=0
-          for f in $(find deploy deploy-cell tools -name '*.sh' -o -name 'lm-config' -o -name 'lm-rate' | sort); do
+          for f in $(find deploy tools -name '*.sh' -o -name 'lm-config' -o -name 'lm-rate' | sort); do
             if ! sh -n "$f" 2>/dev/null; then
               echo "::error file=$f::sh -n 失败"
               sh -n "$f" || true
               fail=1
             fi
           done
-          echo "检查了 $(find deploy deploy-cell tools -name '*.sh' | wc -l) 个脚本"
+          echo "检查了 $(find deploy tools -name '*.sh' | wc -l) 个脚本"
           exit $fail
 
       - name: 检查 Lua / Python 语法
         run: |
           set -e
           if command -v luac >/dev/null; then
-            find deploy deploy-cell -name '*.lua' -print0 | xargs -0 -r -n1 luac -p
+            find deploy -name '*.lua' -print0 | xargs -0 -r -n1 luac -p
           else
             echo "跳过 Lua（无 luac）"
           fi
-          find deploy-cell -name '*.py' -print0 | xargs -0 -r -n1 python3 -m py_compile
+          if [ -n "$(find tools tests -name '*.py' -print -quit 2>/dev/null)" ]; then
+            find tools tests -name '*.py' -print0 | xargs -0 -r -n1 python3 -m py_compile
+          fi
 
       - name: 检查内联 JS 语法
         run: |
@@ -87,7 +89,7 @@ jobs:
             name="linemon-${GITHUB_SHA::8}"
           fi
           mkdir -p out
-          tar -czf "out/${name}.tar.gz" deploy deploy-cell tools tests README.md LICENSE
+          tar -czf "out/${name}.tar.gz" deploy tools tests README.md LICENSE
           echo "NAME=$name" >> "$GITHUB_ENV"
           echo "=== 包内容（前 40 项） ==="
           tar -tzf "out/${name}.tar.gz" | head -40
@@ -148,12 +150,5 @@ jobs:
             sh /tmp/lm/deploy/install.sh
             ```
 
-            内置蜂窝短信转飞书那套（可选）：
-
-            ```sh
-            FEISHU_URL='https://open.feishu.cn/open-apis/bot/v2/hook/你的hook' \
-              sh /tmp/lm/deploy-cell/install.sh
-            ```
-
-            装完在 LuCI 侧栏「服务选项 → 线路监测」里看看板。
+            装完在 LuCI 侧栏的「线路监测」里看看板。
             详细说明见 [README](README.md)。

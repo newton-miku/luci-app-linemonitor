@@ -22,7 +22,7 @@ ls deploy/www/lm/lib
 
 echo
 echo "=== 3. 打包 ==="
-tar -czf "$OUT/linemon-sim.tar.gz" deploy deploy-cell tools tests README.md LICENSE
+tar -czf "$OUT/linemon-sim.tar.gz" deploy tools tests README.md LICENSE
 ls -l "$OUT/linemon-sim.tar.gz"
 
 echo

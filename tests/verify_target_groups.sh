@@ -10,13 +10,13 @@ cat > /etc/line-monitor/targets.conf <<'EOF'
 DASH_TITLE="分组测试"
 DASH_SUBTITLE=""
 EXITS="
-eth1|移动|auto|256|both|公网
-pppoe-wan2|电信||512,768|both|公网
+wan|出口B|auto|256|both|公网
+pppoe-wan|出口A||512,768|both|公网
 eth9|组网|auto|0|both|内网
 "
 LAN_NETS=""
-ICMP_TARGETS="公网/阿里DNS:223.5.5.5 内网/对端路由:192.168.66.1 内网/对端网关:192.168.66.254"
-HTTP_TARGETS="公网/微信:weixin.qq.com 内网/对端面板:192.168.66.1"
+ICMP_TARGETS="公网/阿里DNS:223.5.5.5 内网/对端路由:192.168.1.1 内网/对端网关:192.168.1.254"
+HTTP_TARGETS="公网/微信:weixin.qq.com 内网/对端面板:192.168.1.1"
 ICMP6_TARGETS="公网/阿里v6:2400:3200::1 内网/对端v6:fd00::1"
 PING_COUNT=1
 CURL_TIMEOUT=1
@@ -73,17 +73,17 @@ pass=0; fail=0
 cnt() { c=$(grep -c "$1" /tmp/probe_calls.log 2>/dev/null); echo "${c:-0}"; }
 chk() { if [ "$2" = "$3" ]; then echo "  OK   $1"; pass=$((pass+1))
         else echo "  FAIL $1  期望[$3] 实际[$2]"; fail=$((fail+1)); fi; }
-# 期望：eth1 与 pppoe-wan2 都声明「公网」，eth9 声明「内网」
+# 期望：wan 与 pppoe-wan 都声明「公网」，eth9 声明「内网」
 chk "公网出口测 223.5.5.5（两家各一次）"      "$(cnt '^ping4 223.5.5.5$')" "2"
-chk "内网出口测 192.168.66.1（仅 eth9）"      "$(cnt '^ping4 192.168.66.1$')" "1"
-chk "内网出口测 192.168.66.254（仅 eth9）"    "$(cnt '^ping4 192.168.66.254$')" "1"
+chk "内网出口测 192.168.1.1（仅 eth9）"      "$(cnt '^ping4 192.168.1.1$')" "1"
+chk "内网出口测 192.168.1.254（仅 eth9）"    "$(cnt '^ping4 192.168.1.254$')" "1"
 chk "内网出口测 v6 fd00::1（仅 eth9）"        "$(cnt '^ping6 fd00::1$')" "0"
 # eth9 是虚构接口，取不到 v6 源地址 -> 脚本按设计整组记 FAIL 而不发包。
 # 「内网 v6 目标只有 eth9 在管」这件事改由 history.log 的键来断言。
 chk "对端v6 只挂在 eth9 下"                    "$(grep -c 'v6-eth9|对端v6' /tmp/lm_test_history.log)" "1"
 chk "公网出口测 2400:3200::1（两家各一次）"   "$(cnt '^ping6 2400:3200::1$')" "2"
 chk "公网域名 curl 两家各一次"                 "$(cnt '^curl  http://203.0.113.9$')" "2"
-chk "内网 192.168.66.1 的 curl 仅 eth9"       "$(cnt '^curl  http://192.168.66.1$')" "1"
+chk "内网 192.168.1.1 的 curl 仅 eth9"       "$(cnt '^curl  http://192.168.1.1$')" "1"
 
 echo
 echo "=== 5) history.log 里的曲线键（应不带分组前缀）==="

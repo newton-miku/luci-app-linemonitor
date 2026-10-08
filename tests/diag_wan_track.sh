@@ -8,28 +8,28 @@ echo "=== 2) mwan3 全局与策略 ==="
 uci show mwan3 | grep -E 'globals|policy|rule' | head -n 40
 
 echo
-echo "=== 3) from eth1 手动连通性（IPv4） ==="
-echo "--- ping 上游网关 192.168.8.1 ---"
-ping -c 3 -W 2 -I 192.168.8.114 192.168.8.1 2>&1 | tail -n 4
+echo "=== 3) from wan 手动连通性（IPv4） ==="
+echo "--- ping 上游网关 203.0.113.1 ---"
+ping -c 3 -W 2 -I 203.0.113.114 203.0.113.1 2>&1 | tail -n 4
 echo "--- ping 223.5.5.5 ---"
-ping -c 3 -W 2 -I 192.168.8.114 223.5.5.5 2>&1 | tail -n 4
+ping -c 3 -W 2 -I 203.0.113.114 223.5.5.5 2>&1 | tail -n 4
 echo "--- ping 114.114.114.114 ---"
-ping -c 3 -W 2 -I 192.168.8.114 114.114.114.114 2>&1 | tail -n 4
+ping -c 3 -W 2 -I 203.0.113.114 114.114.114.114 2>&1 | tail -n 4
 echo "--- ping 8.8.8.8 ---"
-ping -c 3 -W 2 -I 192.168.8.114 8.8.8.8 2>&1 | tail -n 4
+ping -c 3 -W 2 -I 203.0.113.114 8.8.8.8 2>&1 | tail -n 4
 
 echo
-echo "=== 4) 不带 -I 的对照（走默认路由 = 电信） ==="
+echo "=== 4) 不带 -I 的对照（走默认路由 = 出口A） ==="
 ping -c 2 -W 2 223.5.5.5 2>&1 | tail -n 3
 
 echo
-echo "=== 5) eth1 的 IPv6 ==="
-echo "--- ping6 2400:3200::1 via eth1 src ---"
-ping6 -c 3 -W 2 -I 2409:8970:9d31:4f78:44ee:91ff:fe20:22b2 2400:3200::1 2>&1 | tail -n 4
+echo "=== 5) wan 的 IPv6 ==="
+echo "--- ping6 2400:3200::1 via wan src ---"
+ping6 -c 3 -W 2 -I 2001:db8:1234:5678:44ee:91ff:fe20:22b2 2400:3200::1 2>&1 | tail -n 4
 echo "--- 2409 的网关 ---"
-ip -6 route show dev eth1 2>/dev/null | head -n 10
+ip -6 route show dev wan 2>/dev/null | head -n 10
 echo "--- ndp 邻居 ---"
-ip -6 neigh show dev eth1 2>/dev/null | head -n 10
+ip -6 neigh show dev wan 2>/dev/null | head -n 10
 
 echo
 echo "=== 6) wan6 的 error 详情 ==="

@@ -1,5 +1,5 @@
 CT=4
-EX_IF=eth1
+EX_IF=wan
 zero=0; fail=0; ok=0; other=0
 echo "--- 60 次带 Host 头测 117.89.182.41 ---"
 for i in $(seq 1 60); do

@@ -15,7 +15,7 @@ snap() {
     }' $CT
 }
 netsnap() {
-  awk '/^ *(eth0|BLUE4|pppoe-wan2|eth1):/ { name=$1; gsub(/:/,"",name); print name,$2,$10 }' /proc/net/dev
+  awk '/^ *(eth0|BLUE4|pppoe-wan|wan):/ { name=$1; gsub(/:/,"",name); print name,$2,$10 }' /proc/net/dev
 }
 snap > /tmp/c4a; netsnap > /tmp/n4a
 T0=$(date +%s); sleep 12

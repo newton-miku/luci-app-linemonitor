@@ -17,6 +17,6 @@ grep -c 'bytes=2147483647' /proc/net/nf_conntrack
 echo
 echo "=== 抽样：某个已饱和流的 5 秒增量（验证 b2 是否真的不动） ==="
 for i in 1 2; do
-  grep '192.168.66.21:5710' /proc/net/nf_conntrack | sed 's/.*mark=/mark=/'
+  grep '192.168.1.21:5710' /proc/net/nf_conntrack | sed 's/.*mark=/mark=/'
   sleep 5
 done

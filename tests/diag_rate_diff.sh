@@ -38,10 +38,10 @@ R=/tmp/drd
 rm -rf $R; mkdir -p $R
 snap > $R/a
 T0=$(date +%s)
-awk '/^ *(eth0|pppoe-wan2|br-lan|eth1):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > $R/dev_a
+awk '/^ *(eth0|pppoe-wan|br-lan|wan):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > $R/dev_a
 sleep 8
 snap > $R/b
-awk '/^ *(eth0|pppoe-wan2|br-lan|eth1):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > $R/dev_b
+awk '/^ *(eth0|pppoe-wan|br-lan|wan):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > $R/dev_b
 T1=$(date +%s)
 DT=$((T1-T0))
 echo "窗口 ${DT}s   快照行数 a=$(wc -l < $R/a) b=$(wc -l < $R/b)"

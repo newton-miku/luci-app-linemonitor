@@ -20,7 +20,7 @@ async function fetchJson(name, dflt) {
 }
 
 // 一行形如：
-//   1790908984 eth1|阿里DNS=39.818,0 eth1|... v6-pppoe-wan2|国际v6=185.273,0
+//   1790908984 wan|阿里DNS=39.818,0 wan|... v6-pppoe-wan|国际v6=185.273,0
 // 首个字段是秒级时间戳，其后每个 token 是 <键>=<值>,<状态>。
 // 值为 FAIL 或「值 0 且状态 1」都算失败（后者是早期 curl 不填 -w 时留下的脏数据）。
 export function parseHistory(text) {

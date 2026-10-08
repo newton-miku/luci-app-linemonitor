@@ -26,10 +26,10 @@ NR==FNR {
 ' /tmp/hn_a /tmp/hn_b | sort -rn | head -22
 echo "--- 全部 entry 的 type 分布 ---"
 awk '{ if (match($0,/type=[A-Z0-9_]+/)) print substr($0,RSTART+5,RLENGTH-5) }' /tmp/hn_b | sort | uniq -c | sort -rn
-echo "--- 含 100.81.67.27 的行数 ---"
-grep -c '100.81.67.27' /tmp/hn_b
-echo "--- 含 192.168.8.115 的行数 ---"
-grep -c '192.168.8.115' /tmp/hn_b
+echo "--- 含 203.0.113.10 的行数 ---"
+grep -c '203.0.113.10' /tmp/hn_b
+echo "--- 含 203.0.113.115 的行数 ---"
+grep -c '203.0.113.115' /tmp/hn_b
 echo "--- 含 192.168.66 的行数 ---"
 grep -c '192.168.66' /tmp/hn_b
 echo "--- 含 240e / 240E 的行数 ---"

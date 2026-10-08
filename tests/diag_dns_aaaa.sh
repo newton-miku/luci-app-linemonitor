@@ -25,7 +25,7 @@ echo "=== 6) 从路由器本机查 AAAA（问自己） ==="
 nslookup -type=AAAA www.taobao.com 127.0.0.1 2>&1 | tail -n 10
 
 echo
-echo "=== 7) 直接问电信 DNS（v6） ==="
+echo "=== 7) 直接问出口A DNS（v6） ==="
 nslookup -type=AAAA www.taobao.com 2400:3200::1 2>&1 | tail -n 10
 
 echo

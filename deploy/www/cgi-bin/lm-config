@@ -23,7 +23,7 @@ list_ifaces() {
         /^@@ADDR@@$/ { addr_phase = 1; next }
 
         !addr_phase {
-            # 2: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 ...
+            # 2: wan: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 ...
             if ($1 !~ /^[0-9]+:$/) next
             name = $2
             sub(/:$/, "", name)
@@ -36,7 +36,7 @@ list_ifaces() {
         }
 
         addr_phase {
-            # 2: eth1    inet 192.168.8.114/24 brd ... scope global eth1
+            # 2: wan    inet 192.168.1.100/24 brd ... scope global wan
             if ($3 != "inet") next
             name = $2
             sub(/@.*$/, "", name)

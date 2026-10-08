@@ -1,5 +1,5 @@
 #!/bin/sh
-echo "=== 手动跑一次采集（移动 v6 现在有源地址了）==="
+echo "=== 手动跑一次采集（出口B v6 现在有源地址了）==="
 sh /usr/bin/line_monitor.sh 2>&1 | tail -8
 sleep 2
 
@@ -8,8 +8,8 @@ echo "=== history.log 最新一行的 v6 键 ==="
 tail -n 1 /www/lm/history.log 2>/dev/null | tr ' ' '\n' | grep -E '^v6-' | sort
 
 echo
-echo "=== 移动出口 v4 键 ==="
-tail -n 1 /www/lm/history.log 2>/dev/null | tr ' ' '\n' | grep -E '^eth1\|' | sort
+echo "=== 出口B出口 v4 键 ==="
+tail -n 1 /www/lm/history.log 2>/dev/null | tr ' ' '\n' | grep -E '^wan\|' | sort
 
 echo
 echo "=== 告警配置 ==="
@@ -24,5 +24,5 @@ echo "=== 现在的 v6 默认路由 ==="
 ip -6 route show default
 
 echo
-echo "=== LAN 客户端前缀（确认还是电信）==="
+echo "=== LAN 客户端前缀（确认还是出口A）==="
 ip -6 addr show dev br-lan | grep 'scope global'

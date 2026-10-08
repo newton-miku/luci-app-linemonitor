@@ -19,11 +19,11 @@ head -4 /tmp/lm_rate_ct.state
 wc -l < /tmp/lm_rate_ct.state
 echo
 echo "=== 同时刻接口计数增量对照（8 秒） ==="
-awk '/^ *(eth0|pppoe-wan2|eth1|br-lan):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > /tmp/vr_a
+awk '/^ *(eth0|pppoe-wan|wan|br-lan):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > /tmp/vr_a
 cat /tmp/lm_rate.json > /tmp/vr_r0
 T0=$(date +%s)
 sleep 8
-awk '/^ *(eth0|pppoe-wan2|eth1|br-lan):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > /tmp/vr_b
+awk '/^ *(eth0|pppoe-wan|wan|br-lan):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > /tmp/vr_b
 /usr/bin/lm_rate.sh
 T1=$(date +%s)
 DT=$((T1 - T0))

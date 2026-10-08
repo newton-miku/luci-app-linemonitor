@@ -1,9 +1,9 @@
 #!/bin/sh
 # diag_hnat4.sh — 按「出口 + 方向」聚合 HNAT 表，验证能否还原真实 ↓↑
-TELV4=$(ip -4 addr show dev pppoe-wan2 2>/dev/null | awk '/inet /{sub(/\/.*/,"",$2); print $2; exit}')
-MOBV4=$(ip -4 addr show dev eth1 2>/dev/null | awk '/inet /{sub(/\/.*/,"",$2); print $2; exit}')
-TELP6=$(ip -6 addr show dev pppoe-wan2 2>/dev/null | awk '/inet6 /{sub(/\/.*/,"",$2); print $2; exit}' | tr -d ':' | cut -c1-8 | tr 'a-f' 'A-F')
-MOBP6=$(ip -6 addr show dev eth1 2>/dev/null | awk '/inet6 /{sub(/\/.*/,"",$2); print $2; exit}' | tr -d ':' | cut -c1-8 | tr 'a-f' 'A-F')
+TELV4=$(ip -4 addr show dev pppoe-wan 2>/dev/null | awk '/inet /{sub(/\/.*/,"",$2); print $2; exit}')
+MOBV4=$(ip -4 addr show dev wan 2>/dev/null | awk '/inet /{sub(/\/.*/,"",$2); print $2; exit}')
+TELP6=$(ip -6 addr show dev pppoe-wan 2>/dev/null | awk '/inet6 /{sub(/\/.*/,"",$2); print $2; exit}' | tr -d ':' | cut -c1-8 | tr 'a-f' 'A-F')
+MOBP6=$(ip -6 addr show dev wan 2>/dev/null | awk '/inet6 /{sub(/\/.*/,"",$2); print $2; exit}' | tr -d ':' | cut -c1-8 | tr 'a-f' 'A-F')
 echo "TELV4=[$TELV4] MOBV4=[$MOBV4] TELP6=[$TELP6] MOBP6=[$MOBP6]"
 
 parse() {
@@ -54,6 +54,6 @@ END {
 ' /tmp/hn_a /tmp/hn_b
 echo "--- netdev 对照（6 秒） ---"
 echo "eth0 rx=$((B0-A0)) tx=$((B1-A1))"
-for f in pppoe-wan2 eth1 BLUE4 br-lan; do
+for f in pppoe-wan wan BLUE4 br-lan; do
   echo "$f rx=$(cat /sys/class/net/$f/statistics/rx_bytes) tx=$(cat /sys/class/net/$f/statistics/tx_bytes)"
 done

@@ -14,10 +14,10 @@ echo "--- 默认 v6 路由 ---"
 ip -6 route show | grep default
 echo "--- br-lan 地址 ---"
 ip -6 addr show br-lan | grep 'scope global'
-echo "--- 测电信 v6 ---"
+echo "--- 测出口A v6 ---"
 ping6 -c 2 -W 2 2400:3200::1 2>&1 | tail -2
-echo "--- 测 eth1 上的 v6 ---"
-ping6 -c 2 -W 2 -I eth1 2409:8080::8 2>&1 | tail -2
+echo "--- 测 wan 上的 v6 ---"
+ping6 -c 2 -W 2 -I wan 2409:8080::8 2>&1 | tail -2
 
 echo
 echo "===== 回滚到 metric=10 ====="

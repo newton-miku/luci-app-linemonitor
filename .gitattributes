@@ -22,7 +22,6 @@
 deploy/www/cgi-bin/lm-config  text eol=lf
 deploy/www/cgi-bin/lm-rate    text eol=lf
 deploy/install.sh             text eol=lf
-deploy-cell/install.sh        text eol=lf
 
 # 图片等二进制别乱动
 *.png           binary

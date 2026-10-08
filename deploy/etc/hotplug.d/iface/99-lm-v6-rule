@@ -1,22 +1,25 @@
 #!/bin/sh
-# 延迟监测：修复「路由器本机发电信 IPv6 被 mwan3 策略路由丢弃」的问题。
+# 延迟监测：修复「路由器本机发出的 IPv6 包被 mwan3 策略路由丢弃」的问题。
 #
-# 现象：路由器本机 ping6/curl 电信 v6 全部超时（看板上 v6-pppoe-wan2|* 恒为 FAIL），
-#       但 LAN 客户端走电信 v6 完全正常 —— 是假阴性，不是线路故障。
+# 现象：路由器本机 ping6/curl 某个出口的 IPv6 全部超时（看板上该出口的 v6 曲线恒为 FAIL），
+#       但 LAN 客户端走同一条 IPv6 线路完全正常 —— 是假阴性，不是线路故障。
 # 原因：ip6tables -t mangle OUTPUT -j mwan3_hook 给本机 v6 包打上 fwmark 0x400，
 #       规则 `2004: from all fwmark 0x400/0x3f00 lookup 4` 把包送进表 4
-#       （pppoe-wan2 的策略表）；而 mwan3 没识别出 pppoe-wan2 的 v6 直连网络
+#       （某个出口的策略表）；而 mwan3 没识别出那个接口的 v6 直连网络
 #       （`mwan3 status` 的 "Directly connected ipv6 networks:" 是空的），
-#       表 4 里 `unreachable 240e:358:a001:c3e7::/64 dev lo` 比 default 更具体，
-#       包在路由查找阶段就被判为不可达。
-# 修法：源地址落在 240e::/16（电信 v6 段）的本机流量优先走 main 表。
-#       移动 v6 是 2409::/16，不匹配这条，继续走原来的 mwan3 策略。
-# 验证：ping6 -I <pppoe-wan2 全局 v6 地址> 2400:3200::1 应 0% 丢包。
+#       表 4 里那条比 default 更具体的 `unreachable <前缀>/64 dev lo` 规则
+#       在路由查找阶段就把包判为不可达。
+# 修法：把本机源地址落在某个特定 IPv6 段（默认 240e::/16，可在 V6_RULE_SRC
+#       环境变量或下面 SOURCE_PREFIX 处改）的流量优先走 main 表。
+#       其他运营商的 v6 段不匹配这条，继续走原来的 mwan3 策略。
+# 验证：ping6 -I <该接口的全局 v6 地址> 2400:3200::1 应 0% 丢包。
+
+SOURCE_PREFIX="240e::/16"
 
 apply_rule() {
-    ip -6 rule show 2>/dev/null | grep -q 'from 240e::/16 lookup main' && return 0
-    ip -6 rule add from 240e::/16 lookup main priority 100 2>/dev/null && \
-        logger -t lm-v6-rule "added: from 240e::/16 lookup main priority 100"
+    ip -6 rule show 2>/dev/null | grep -q "from $SOURCE_PREFIX lookup main" && return 0
+    ip -6 rule add from "$SOURCE_PREFIX" lookup main priority 100 2>/dev/null && \
+        logger -t lm-v6-rule "added: from $SOURCE_PREFIX lookup main priority 100"
 }
 
 # 手动调用（install.sh 里 `sh 99-lm-v6-rule apply`）直接生效，不看接口事件

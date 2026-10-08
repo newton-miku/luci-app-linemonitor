@@ -24,5 +24,5 @@ echo "=== /www/cgi-bin ==="
 ls -l /www/cgi-bin/ 2>/dev/null
 echo ""
 echo "=== 接口地址 ==="
-ip -4 addr show eth1 2>/dev/null | awk '/inet /{print "eth1:", $2}'
-ip -4 addr show pppoe-wan2 2>/dev/null | awk '/inet /{print "pppoe-wan2:", $2}'
+ip -4 addr show wan 2>/dev/null | awk '/inet /{print "wan:", $2}'
+ip -4 addr show pppoe-wan 2>/dev/null | awk '/inet /{print "pppoe-wan:", $2}'

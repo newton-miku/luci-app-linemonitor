@@ -47,7 +47,7 @@ chmod +x /www/cgi-bin/lm-config /www/cgi-bin/lm-rate
 cp "$SRC/etc/init.d/linemon" /etc/init.d/linemon
 chmod +x /etc/init.d/linemon
 
-# 修「本机电信 IPv6 被 mwan3 策略路由丢弃」（看板上 v6-pppoe-wan2|* 恒 FAIL 的假阴性）
+# 修「路由器本机发出的 IPv6 包被 mwan3 策略路由丢弃」（看板上该出口 v6 曲线恒 FAIL 的假阴性）
 # 详见 deploy/etc/hotplug.d/iface/99-lm-v6-rule 头部注释
 mkdir -p /etc/hotplug.d/iface
 cp "$SRC/etc/hotplug.d/iface/99-lm-v6-rule" /etc/hotplug.d/iface/99-lm-v6-rule

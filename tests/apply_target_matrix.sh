@@ -17,12 +17,12 @@ cp "$F" "$BAK"
 
 # 下面三行按当前拓扑写死（2026-10-04 的配置）。
 # 目标列表改过就要自己核一遍：外网出口列公网目标，组网出口列对端。
-PUB='阿里DNS,腾讯DNS,CNNIC,微信,淘宝,B站,抖音,QQ,阿里v6,移动v6,国际v6'
-LAN='op-nj,cd-ubuntu22,ubunt-hb'
+PUB='阿里DNS,腾讯DNS,CNNIC,微信,淘宝,B站,抖音,QQ,阿里v6,运营商v6,国际v6'
+LAN='对端一,对端二,对端三'
 
-sed -i "s#^eth1|移动|auto|256|both|.*\$#eth1|移动|auto|256|both|$PUB#" "$F"
-sed -i "s#^pppoe-wan2|电信||512,768|both|.*\$#pppoe-wan2|电信||512,768|both|$PUB#" "$F"
-sed -i "s#^tailscale0|tailscale组网|||v4|.*\$#tailscale0|tailscale组网|||v4|$LAN#" "$F"
+sed -i "s#^wan|出口B|auto|256|both|.*\$#wan|出口B|auto|256|both|$PUB#" "$F"
+sed -i "s#^pppoe-wan|出口A||512,768|both|.*\$#pppoe-wan|出口A||512,768|both|$PUB#" "$F"
+sed -i "s#^tun0|组网|||v4|.*\$#tun0|组网|||v4|$LAN#" "$F"
 
 echo "备份：$BAK"
 echo "---- 迁移后的 EXITS ----"

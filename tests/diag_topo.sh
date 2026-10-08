@@ -1,5 +1,5 @@
 #!/bin/sh
-# diag_topo.sh — 看清 eth0/eth1/br-lan/pppoe-wan2 的真实角色
+# diag_topo.sh — 看清 eth0/wan/br-lan/pppoe-wan 的真实角色
 echo "=== brctl show ==="
 brctl show 2>/dev/null
 echo

@@ -1,5 +1,5 @@
 #!/bin/sh
-# v6 出口排查：电信 IPv6 到底挂在哪个接口上，采集为什么全 FAIL
+# v6 出口排查：出口A IPv6 到底挂在哪个接口上，采集为什么全 FAIL
 echo "===== 1) 所有接口的 IPv6 地址 ====="
 ip -6 addr show | awk '/^[0-9]+: /{ifc=$2} /inet6 /{print ifc, $2, $3, $4, $5, $6}'
 
@@ -26,7 +26,7 @@ grep -E '^(EXITS|ICMP6_TARGETS|PUBLIC_DNS)=' /etc/line-monitor/targets.conf
 echo
 echo "===== 6) 实测 ping6（各接口）====="
 for tgt in 2400:3200::1 240e:4c:4008::1; do
-    for i in eth1 pppoe-wan2 WAN2_6 wan6; do
+    for i in wan pppoe-wan WAN2_6 wan6; do
         ip link show "$i" >/dev/null 2>&1 || continue
         out=$(ping6 -I "$i" -c 2 -W 2 "$tgt" 2>&1 | tail -2 | tr '\n' ' ')
         printf 'ping6 -I %-12s %-24s -> %s\n' "$i" "$tgt" "$out"

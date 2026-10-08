@@ -4,11 +4,11 @@ echo "=== 先清基线，让守护进程重建 ==="
 rm -f /tmp/lm_rate.state /tmp/lm_rate_ct.state
 sleep 8
 
-awk '/^ *(eth0|br-lan|pppoe-wan2|eth1|BLUE4):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > /tmp/v2_a
+awk '/^ *(eth0|br-lan|pppoe-wan|wan|BLUE4):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > /tmp/v2_a
 cat /tmp/lm_rate.json > /tmp/v2_r0
 T0=$(date +%s)
 sleep 20
-awk '/^ *(eth0|br-lan|pppoe-wan2|eth1|BLUE4):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > /tmp/v2_b
+awk '/^ *(eth0|br-lan|pppoe-wan|wan|BLUE4):/ { n=$1; gsub(/:/,"",n); print n,$2,$10 }' /proc/net/dev > /tmp/v2_b
 cat /tmp/lm_rate.json > /tmp/v2_r1
 T1=$(date +%s)
 DT=$((T1-T0))

@@ -1,10 +1,14 @@
-# 线路质量监测（OpenWrt 双 WAN 延迟监测）
+# 线路质量监测（OpenWrt 线路延迟监测）
 
 [![build](https://github.com/newton-miku/luci-app-linemonitor/actions/workflows/build.yml/badge.svg)](https://github.com/newton-miku/luci-app-linemonitor/actions/workflows/build.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-在 OpenWrt 路由器上同时监测**两条出口**的延迟质量，并把内网设备正在跑的 TCP 流按出口归类，
+在 OpenWrt 路由器上监测**每一个出口**的延迟质量，并把内网设备正在跑的 TCP 流按出口归类，
 用来定位"请求发出去半天没回应""游戏卡顿"这类问题到底是哪条线路在拖后腿。
+
+出口数量不限：**单 WAN**、**多 WAN**（mwan3 分流）、**组网隧道**（WireGuard / Tailscale / ZeroTier），
+乃至 `LAN` 口直连的对端，都可以作为一条独立出口被监测与对比；只有一个出口时看板同样成立，
+只是失去了横向对比，曲线与统计表功能不变。
 
 - **采集**：`line_monitor.sh` 每 60 秒对每个出口的每个目标测一轮 ICMP / HTTP 延迟，追加到 `history.log`；
   另有 5 秒一轮的 TCP 流采集、2 秒一轮的接口实时速率。
@@ -13,71 +17,80 @@
 - **设置**：LuCI 侧栏内嵌的设置页，七个标签页改出口、目标、采集参数、告警推送，保存即生效。
 - **告警**：异常延迟或无响应持续若干轮后推送到飞书 / 企业微信 / 钉钉 / Bark / Server酱 / Telegram / 自定义 JSON。
 
-配套还有一个独立的 `deploy-cell/`：把「内置蜂窝」模组的短信转发从 PPS+（pushplus）换成飞书机器人。
-
 ## 环境要求
 
 | 项目 | 要求 |
 |---|---|
 | 路由器 | OpenWrt 21.02 或更新，`aarch64` / `arm` / `mipsel` 均可（纯 shell + busybox） |
 | 依赖 | `busybox`、`curl`（带 IPv6）、`ip`（iproute2）、`uhttpd`、`luci-base`；**不需要** python / node / jq |
+| 多出口分流 | 可选。要按出口区分流量，需要 mwan3 或等价的策略路由给每个出口打 conntrack mark |
 | 构建看板 | Node.js 20+（只在开发机上，路由器不跑 node） |
 
-原始开发环境：`NRadio-C8-New688`（aarch64，Linux 5.4.255，OpenWrt 21.02 定制固件），
-本机 `192.168.66.21/24`，路由器 `192.168.66.1`。
-**换路由器要改的是 `deploy/etc/line-monitor/targets.conf` 里的接口名、显示名和 mark 值**，
-其余不用动；网络参数下面每节都会说明怎么实测。
+**换路由器唯一要改的是 `deploy/etc/line-monitor/targets.conf` 里的接口名、显示名和 mark 值**，
+其余不用动；下面每节都会说明这些值怎么实测。
 
-## 两条出口（示例环境）
+## 出口配置
 
-| 接口 | 显示名 | 类型 | v4 地址 | v6 地址 | conntrack mark |
-|---|---|---|---|---|---|
-| `eth1` | 移动 | 蜂窝 CPE（华为，DHCP） | `192.168.8.114/24`（会变） | `2409:8970:9d31:4f78::/64` 下发 | `256` |
-| `pppoe-wan2` | 电信 | PPPoE 拨号 | `100.81.x.x` | `240e:358:a001:e066::/64` 下发 | `512`、`768` |
+每个出口是 `EXITS` 里的一行。可以是外网 WAN 口，也可以是组网隧道接口或 LAN 口直连的对端：
 
-上表是**我这台路由器的实测值，别照抄**。`mark` 值一定要自己测：
+| 接口 | 显示名 | 类型 | 用途 | 测哪些目标 |
+|---|---|---|---|---|
+| `wan` | 出口A | `both` | 外网拨号口 | 公网 ICMP / HTTP / IPv6 |
+| `wan2` | 出口B | `both` | 第二条外网线路 | 同上，用于横向对比 |
+| `tun0` | 组网 | `v4` | WireGuard / Tailscale 等隧道 | 内网对端 |
+| `eth2` | 直连设备 | `v4` | LAN 口上挂的对端设备 | 内网对端 |
+
+出口行有 6 个字段：**接口名 / 显示名 / 源 IP / conntrack mark / 类型 / 监测目标**。
+
+- **接口名**必须是本机真实存在的接口（`ip link` 能看到），可以是任何名字。
+- **源 IP** 留空或写 `auto` 表示采集时现读，DHCP 地址会变的出口**必须**留空。
+- **conntrack mark** 只在需要按出口分流量时才填，多出口分流（mwan3）的场景下必填。
+- **类型**（`v4` / `v6` / `both`）决定这个出口测哪一类目标；留空按 `both` 算，所以老的配置不改也能跑。
+
+**单 WAN 场景**：只写一行、mark 留空即可。看板照常出一页曲线 + 一张统计表，
+`历史` 归因那几列（历史胜率、最近失败、抖动）在单出口下恒为默认值，属正常现象。
+
+**mark 值一定要自己测**（只有配了策略路由分流的多出口才需要）：
 
 ```sh
 ip route get 1.1.1.1 mark 256   # 看真实出口是哪个 dev
 ```
 
-`eth1` 的地址由蜂窝模块下发，**不是固定的**（实测从 `.112` 漂到过 `.114`）。
-配置里它的源 IP 写 `auto`，采集时现读——写死会让源地址策略路由失效，详见踩坑记录第 19 条。
+源地址由上游设备下发时**不是固定的**（DHCP 会漂）。配置里写 `auto`、采集时现读——
+写死会让源地址策略路由失效，详见踩坑记录第 19 条。
 **v6 同理**：前缀由运营商下发，采集时用 `v6_src_of()` 现读该出口的全局 v6 地址，
 不能绑接口名（PPPoE 会 `Permission denied`），详见踩坑记录第 42 条。
 
-LuCI 里 `network.wan2_6` 挂在 `@wan2` 上（`proto=dhcpv6`），但 v6 地址实际落在 `pppoe-wan2`，
-所以配置里写 `pppoe-wan2` 是对的。
-
-出口行还有第 5 个字段**类型**（`v4` / `v6` / `both`），决定这个出口测哪一类目标；
-留空按 `both` 算，所以老的配置不改也能跑。
+LuCI 里 v6 逻辑接口（`network.wan2_6` 之类）挂的是父接口，但 v6 地址往往实际落在拨号口上，
+配置里要写**地址真正所在的那个接口**，可以用 `ip -6 addr` 核对。
 
 ## 看板
 
-**新版**（React + Ant Design v5 + ProComponents，本机 Vite 构建）：`http://192.168.66.1/lm/app/index.html`。
+**新版**（React + Ant Design v5 + ProComponents，本机 Vite 构建）：`http://<路由器IP>/lm/app/index.html`。
 LuCI 侧栏「服务选项 → 线路监测 → 延迟看板」嵌的就是这个。
 源码在 `web/`，改完 `npm run build` 再 `deploy/install.sh` 就会把产物铺到 `/www/lm/app/`。
 
-**旧版**（单文件 HTML + 手写 antd 类名 + 本地 chart.js）：`http://192.168.66.1/lm/line.html`。
+**旧版**（单文件 HTML + 手写 antd 类名 + 本地 chart.js）：`http://<路由器IP>/lm/line.html`。
 功能等价、不依赖构建，**作为退路保留**。两边读的是同一份 `history.log` / `config.json` / `tcp.json`。
 
 两版都是**标签页按出口自动生成**，不是写死的：
 
 - **总览** — 各出口的平均延迟卡片（带迷你趋势）、IPv6 平均延迟卡片、各目标延迟对比柱状图
-- **每个出口一页，页里 IPv4 / IPv6 各占一张卡** — 页名就是出口的显示名（如「移动」「电信」）。页里画几块由该出口的**类型**决定：
-  `both` 出两张卡（`移动 · IPv4` / `移动 · IPv6`），`v4` / `v6` 就只出对应的那一张。
+- **每个出口一页，页里 IPv4 / IPv6 各占一张卡** — 页名就是出口的显示名（如「出口A」「出口B」）。页里画几块由该出口的**类型**决定：
+  `both` 出两张卡（`出口A · IPv4` / `出口A · IPv6`），`v4` / `v6` 就只出对应的那一张。
   每张卡各有自己的曲线、开关、时间轴和统计表——合并成一张图时 v6 只能靠虚线区分，
   十几条线叠在一起根本看不清，所以干脆拆开。
 - **实时TCP流** — 内网设备发起的 TCP 流，标注出口、服务名、状态；卡住的 `SYN_SENT` 整行标红
 
 总览页顶部还有一张 **`实时速率`** 卡：`lm_rate.sh` 每 2 秒采样一次，前端每 2 秒拉一次
-`/cgi-bin/lm-rate`。默认采 `eth1 pppoe-wan2 br-lan` 三个口（`RATE_IFACES` 可改）。
-接口名到显示名的映射跟看板一样取自 `EXITS` 的第二字段，`br-lan` 这种不在出口列表里的
-就原样显示接口名。数字是**最近一个采样间隔的平均值**，不是瞬时值。
+`/cgi-bin/lm-rate`。默认采 `RATE_IFACES` 里列出的接口（配了 mark 的出口走 conntrack 分出口，
+没配的一律按接口计数器统计）。接口名到显示名的映射跟看板一样取自 `EXITS` 的第二字段，
+`br-lan` 这种不在出口列表里的就原样显示接口名。数字是**最近一个采样间隔的平均值**，不是瞬时值。
 **结果写 `/tmp/lm_rate.json`（RAM）**——2 秒一次往 overlay 上写会把 flash 磨坏。
 
-**取数用的是 `/proc/net/nf_conntrack`，不是 `/proc/net/dev`。** 原因见踩坑 57：开了
-硬件 NAT 卸载之后，接口计数器根本看不见那些流量。
+**取数用的是 `/proc/net/nf_conntrack`，不是 `/proc/net/dev`**（配了 mark 的出口）。
+原因见踩坑 57：开了硬件 NAT 卸载之后，接口计数器根本看不见那些流量。
+没配 mark 的接口（`br-lan` 之类）仍然退回接口计数器差分。
 
 统计表跟着每条出口页走，粒度是**线路 × 协议 × 目标**；总览页那张表把所有出口拼在一起，用「线路」列分组。
 IPv6 卡片显示的是**平均延迟数字**（不是「可达/不可达」——那个词没信息量，有数字就给数字）。
@@ -137,8 +150,8 @@ LuCI 侧栏 **服务选项 → 线路监测** 下挂两个标签页：`延迟看
 ## 统计
 
 每个标签页底部都有一块统计表，**粒度是「线路 × 协议 × 监测目标」**。出口页里 IPv4 与 IPv6
-各占一张卡、各带一张表；总览页把四条线路（移动 (IPv4) / 移动 (IPv6) / 电信 (IPv4) / 电信 (IPv6)）
-的全部目标列在一张表里，用左侧的线路列分组。
+各占一张卡、各带一张表；总览页把所有出口 × 协议的全部目标列在一张表里，用左侧的线路列分组。
+出口只有一个时，分组列只有一行，其余列照常计算。
 
 四档时间窗：`1 小时` / `6 小时` / `24 小时` / `全部`，选择记在浏览器里。
 窗口边界按时间戳算，不依赖采集间隔配置。**这四档同时也是曲线图的窗口**——
@@ -157,7 +170,7 @@ LuCI 侧栏 **服务选项 → 线路监测** 下挂两个标签页：`延迟看
 
 ## 设置页
 
-`http://192.168.66.1/lm/config.html`
+`http://<路由器IP>/lm/config.html`
 
 东西多了以后分成了七个标签页：**基本 / 出口 / 监测目标 / 采集参数 / 告警推送 / 配色阈值 / 配置预览**。
 底部的「保存并生效 / 放弃修改」是常驻的，切到哪一页都能点。
@@ -187,16 +200,16 @@ LuCI 侧栏 **服务选项 → 线路监测** 下挂两个标签页：`延迟看
 - **出口**页那一列的「监测目标」按钮 —— 写着 `已选 11 / 14` 这种，点开勾选这个出口要测的目标。
 - **监测目标**页那一列的「监测线路」按钮 —— 勾选这个目标要让哪些出口来测。
 
-两边是同一张表的两种读法：在出口侧勾上 `移动 × 微信`，目标侧 `微信` 那行的计数立刻从
+两边是同一张表的两种读法：在出口侧勾上 `出口A × 微信`，目标侧 `微信` 那行的计数立刻从
 `1 / 3` 变 `2 / 3`；反过来也一样。面板里的「全选 / 清空 / 反选」只作用于当前这一侧。
 
 **唯一存放处是 `EXITS` 的第 6 字段**——该出口监测的目标名清单，逗号分隔、不带分组前缀：
 
 ```
 EXITS="
-eth1|移动|auto|256|both|阿里DNS,腾讯DNS,CNNIC,微信,淘宝,B站,抖音,QQ,阿里v6,移动v6,国际v6
-pppoe-wan2|电信||512,768|both|阿里DNS,腾讯DNS,CNNIC,微信,淘宝,B站,抖音,QQ,阿里v6,移动v6,国际v6
-tailscale0|tailscale组网|||v4|op-nj,cd-ubuntu22,ubunt-hb
+wan|出口A|auto|256|both|阿里DNS,腾讯DNS,CNNIC,微信,淘宝,B站,抖音,QQ,阿里v6,运营商v6,国际v6
+wan2|出口B||512,768|both|阿里DNS,腾讯DNS,CNNIC,微信,淘宝,B站,抖音,QQ,阿里v6,运营商v6,国际v6
+tun0|组网|||v4|对端一,对端二,对端三
 "
 ```
 
@@ -208,29 +221,29 @@ tailscale0|tailscale组网|||v4|op-nj,cd-ubuntu22,ubunt-hb
 
 看板这一侧的自检：`GET /lm/config.json` 里 `exits[].targets` 是出口的清单，
 每个目标的 `exits` 是反查出来的视图，两边必须对称。
-本机实测 `公网/阿里DNS` → `["eth1","pppoe-wan2"]`、`内网/op-nj` → `["tailscale0"]`。
+例如 `公网/阿里DNS` → `["wan","wan2"]`、`内网/对端一` → `["tun0"]`。
 
 **从旧版升上来的机器要跑一次迁移**：`install.sh` 有意不覆盖已有的 `targets.conf`，
 而旧版第 6 字段写的是分组名（`公网`/`内网`），新代码按目标名匹配，名字对不上就一条都不测。
 
 ```sh
-scp tests/apply_target_matrix.sh root@192.168.66.1:/tmp/
-ssh root@192.168.66.1 "sh /tmp/apply_target_matrix.sh"
+scp tests/apply_target_matrix.sh root@<路由器IP>:/tmp/
+ssh root@<路由器IP> "sh /tmp/apply_target_matrix.sh"
 ```
 
-脚本先备份到 `/root/lm-targets.conf.<时间戳>.bak`，再把三条出口的目标清单按当前拓扑写死。
-**目标列表改过就要自己核一遍那三行**（外网出口列公网目标，组网出口列对端）。
+脚本先备份到 `/root/lm-targets.conf.<时间戳>.bak`，再把每条出口的目标清单按当前拓扑写死。
+**目标列表改过就要自己核一遍那几行**（外网出口列公网目标，组网出口列对端）。
 
-外网出口为什么写死 11 个公网目标而不是留空全测：三个 `内网/` 对端是 tailscale 地址（`100.x`），
-从 `eth1` / `pppoe-wan2` 发出去根本回不来，留空全测只会得到一屏 100% 丢包和误报。
+外网出口为什么写死 11 个公网目标而不是留空全测：`内网/` 那几个对端是组网隧道地址，
+从外网口发出去根本回不来，留空全测只会得到一屏 100% 丢包和误报。
 
 **内网网段填 CIDR，留空就自动识别**。自动识别的顺序是
 `uci get network.lan.ipaddr` + `netmask` → 该接口 device 的实际地址（默认 `br-lan`）。
-本机实测得到 `192.168.66.1/255.255.255.0`，配置里保持留空即可，换固件换网段都不用改。
+配置里保持留空即可，换固件换网段都不用改。
 
 它只影响「实时TCP流」页挑哪些连接算内网发起的。**匹配是按位比较，不是字符串前缀**——
-`/8 /16 /22 /25 /32` 都算得对，`192.168.66.0/24` 不会像前缀匹配那样把
-`192.168.67.x` 也吞进来。多个网段用空格隔开：`LAN_NETS="192.168.66.0/24 10.0.0.0/8"`。
+`/8 /16 /22 /25 /32` 都算得对，`192.168.1.0/24` 不会像前缀匹配那样把
+`192.168.2.x` 也吞进来。多个网段用空格隔开：`LAN_NETS="192.168.1.0/24 10.0.0.0/8"`。
 `tests/test_lan_cidr.sh` 用 `/25` 和 `/16` 这两个能区分对错的掩码卡住了这段逻辑。
 
 「配置预览」页实时显示将要写入的 conf 全文，点「保存并生效」通过
@@ -267,9 +280,9 @@ ssh root@192.168.66.1 "sh /tmp/apply_target_matrix.sh"
 
 - `ALERT_MAX_MS` —— 单次延迟超过这个值算异常，默认 300ms；不可达（`FAIL`）和部分丢包也算
 - `ALERT_DEBOUNCE` —— 连续几次异常才推第一条，默认 3 次 ≈ 3 分钟。**这道闸门是必需的**：
-  移动线路每隔几十分钟会有一次 1 秒左右的尖峰，单次就报会一直响
+  有些线路每隔几十分钟会有一次 1 秒左右的尖峰，单次就报会一直响
 - `ALERT_COOLDOWN` —— 一直没恢复时多久再提醒一次，默认 1800 秒；填 `0` 表示只在首次和恢复时各推一条
-- `ALERT_SCOPE` —— 默认 `v4`。当前移动和电信的 IPv6 目标常年不可达，全报会一直响
+- `ALERT_SCOPE` —— 默认 `v4`。有些线路的 IPv6 目标常年不可达，全报会一直响
 
 同一轮里多个目标出问题是**合并成一条消息**发出去的，不会刷屏。
 状态存在 `/tmp/lm_alert.state`（每行 `<键> <状态> <连续次数> <上次推送时间>`）——
@@ -403,12 +416,12 @@ cd ..
 sh tools/fetch-vendor.sh
 ```
 
-然后打包上传（把 `192.168.66.1` 换成你的路由器）：
+然后打包上传（把 `<路由器IP>` 换成你的路由器）：
 
 ```sh
 tar -czf lmdeploy.tar.gz deploy
-scp lmdeploy.tar.gz root@192.168.66.1:/tmp/
-ssh root@192.168.66.1
+scp lmdeploy.tar.gz root@<路由器IP>:/tmp/
+ssh root@<路由器IP>
   rm -rf /tmp/lmd && mkdir -p /tmp/lmd
   tar -xzf /tmp/lmdeploy.tar.gz -C /tmp/lmd
   sh /tmp/lmd/deploy/install.sh
@@ -436,7 +449,7 @@ ssh root@192.168.66.1
 本地改完想要同样的检查，跑一遍就行：
 
 ```sh
-for f in $(find deploy deploy-cell tools -name '*.sh'); do sh -n "$f" || echo "FAIL $f"; done
+for f in $(find deploy tools -name '*.sh'); do sh -n "$f" || echo "FAIL $f"; done
 node tools/check-inline-js.js deploy/www/lm/line.html deploy/www/lm/config.html
 sh tools/ci-sim.sh     # 完整的组装 + 19 项自检（需要 web/dist 已构建）
 ```
@@ -446,7 +459,7 @@ sh tools/ci-sim.sh     # 完整的组装 + 19 项自检（需要 web/dist 已构
 `history.log` 每行一次采集，空格分隔的 `键=值,状态`：
 
 ```
-1790847553 eth1|阿里DNS=67.124,0 pppoe-wan2|阿里DNS=23.776,0 v6-eth1|阿里v6=FAIL,100
+1790847553 wan|阿里DNS=67.124,0 wan2|阿里DNS=23.776,0 v6-wan|阿里v6=FAIL,100
 ```
 
 键是 `<接口名>|<目标显示名>`（IPv6 是 `v6-<接口名>|<目标>`）。
@@ -456,15 +469,15 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
 `tcp.json`：
 
 ```json
-{"ts":1790847579,"streams":[{"src":"192.168.66.21","sport":"7484","dst":"2.17.106.176",
- "dport":"443","iface":"eth1","service":"淘宝","state":"SYN_SENT"}]}
+{"ts":1790847579,"streams":[{"src":"192.168.1.100","sport":"7484","dst":"203.0.113.20",
+ "dport":"443","iface":"wan","service":"示例站点","state":"SYN_SENT"}]}
 ```
 
 `/tmp/lm_rate.json`（实时速率，2 秒一次，掉电即忘）：
 
 ```json
-{"ts":1790910508,"rates":[{"if":"eth1","label":"移动","rx":5653,"tx":21548},
- {"if":"pppoe-wan2","label":"电信","rx":7506,"tx":14092},{"if":"br-lan","label":"br-lan","rx":17825,"tx":12107}]}
+{"ts":1790910508,"rates":[{"if":"wan","label":"出口A","rx":5653,"tx":21548},
+ {"if":"wan2","label":"出口B","rx":7506,"tx":14092},{"if":"br-lan","label":"br-lan","rx":17825,"tx":12107}]}
 ```
 
 `rx`/`tx` 单位是**字节/秒**（前端 `fmtRate()` 换算成 KB/s、MB/s）。
@@ -473,12 +486,15 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
 
 **接口相关**
 
-1. `eth1` 是蜂窝 CPE 出口、`pppoe-wan2` 是电信 PPPoE。早期版本两个标签是反的，
-   后来用 LuCI + `ip route get` 实测确认。
-2. conntrack 的 mark：`256`→`eth1`、`512`/`768`→`pppoe-wan2`。`512` 出现的条数比另外
-   两个都多，早期版本没判它，全落到"未知"。
-3. 测电信（`eth1`，源地址 `192.168.8.112`）的 HTTP 目标需要临时策略路由
-   `ip rule add from 192.168.8.112 lookup 1 pref 3000`，测完立刻删，否则不对称路由导致连接失败。
+1. **接口名不能靠猜**。同一个物理口在不同固件里可能叫 `wan` 也可能叫 `wan`，
+   而 v6 地址常常落在拨号口而不是 LuCI 里的逻辑接口名上。早期版本两个出口的标签是反的，
+   后来用 `ip addr` + `ip route get <目标> mark <值>` 逐条实测才确认。
+2. conntrack 的 mark 是按出口各自的策略路由定的，同一台机器上不同 mark 出现的连接条数差很多，
+   早期版本只判了其中一个值，其余全落到"未知"——表现为速率卡长期空白。
+   **列全所有在用的 mark**，逗号分隔（`256`、`512,768` 这种写法）。
+3. 测某个出口的 HTTP 目标时，如果源地址不在主表默认路由所选出口上，需要临时策略路由
+   `ip rule add from <该出口源地址> lookup <表号> pref 3000`，测完立刻删，
+   否则非对称路由导致连接失败。
 
 **busybox 相关**
 
@@ -490,8 +506,8 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
    现在整段用单进程 awk 一次过，耗时 0 秒。
 7. awk 里不要用未定义变量做判断（写 `DST` 而不是 `dst` 会导致所有行被跳过）。
 8. `ping` 输出解析用 `awk index()+split()`，别用 `sed`/`\/` 转义（busybox 不可靠）。
-9. 系统 DNS 走 tailscale 解析不了公网域名，必须 `nslookup <域名> 223.5.5.5`
-   （输出为 `Address N: <ip>` 带编号）。
+9. 系统 DNS 若被组网客户端的 MagicDNS 接管，解析不了公网域名，必须显式
+   `nslookup <域名> 223.5.5.5`（busybox 输出为 `Address N: <ip>` 带编号）。
 10. 服务名映射要收录域名**全部**的解析结果，否则绝大多数连接会显示"其他"。
 
 **调度相关**
@@ -528,12 +544,11 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
 18. **`curl -w '%{time_connect}'` 在连接失败时照样输出 `0.000000`**，光看输出分不出
     「真的 0ms」和「压根没连上」。不检查退出码就会把失败记成合法的 0ms，
     曲线被画成一条假零线（日志里表现为 `微信=0,1`）。现在用退出码判断。
-19. **源地址策略路由不能写死 IP**。`eth1` 是蜂窝模块下发的 DHCP 地址，实测一天内
-    就从 `192.168.8.112` 变成 `192.168.8.114`；写死的那条 `ip rule` 还挂在那儿，
-    却不匹配任何流量——包从 `eth1` 出去、回包按主表默认路由（电信）回来，
-    非对称路由让 TCP 握手随机失败，表现为 HTTP 目标「时通时不通」（移动出口的
-    微信/淘宝/B站/QQ 曾长期一半超时）。配置里源 IP 写 `auto`，采集时 `ip addr`
-    现读；路由表号也按接口反查（原来硬编码 `lookup 1`，会把别的出口塞进移动的表）。
+19. **源地址策略路由不能写死 IP**。DHCP 下发的地址实测一天内就变过一次；写死的那条
+    `ip rule` 还挂在那儿，却不匹配任何流量——包从某个口出去、回包按主表默认路由回来，
+    非对称路由让 TCP 握手随机失败，表现为 HTTP 目标「时通时不通」。配置里源 IP 写 `auto`，
+    采集时 `ip addr` 现读；路由表号也按接口反查（原来硬编码 `lookup 1`，
+    会把别的出口的流量塞进同一个表）。
 20. **HTTP 目标要带 `Host` 头**。不带时腾讯的服务器直接掐断连接（`curl` 退出码 52，
     服务器空回复），握手其实已经完成。现在 `curl -H "Host: <原域名>"`，
     并把 `rc=52`/`56` 视为握手成功——测的是 TCP 连接耗时，不是网页能不能打开。
@@ -550,7 +565,7 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
 24. 前端改完发现看不到新版时，先怀疑缓存：静态文件没发 `Cache-Control`，
     浏览器可能仍用旧副本；而 LuCI 的 iframe 还会额外复用旧文档。
     两个视图里的 `src` 带了版本串（现为 `?v=20261002c`），改页面时一起 bump 就能强制重取。
-25. **推送必须去抖**。移动线路每隔几十分钟就有一次 1 秒左右的延迟尖峰，
+25. **推送必须去抖**。有些线路每隔几十分钟就有一次 1 秒左右的延迟尖峰，
     单次超阈值就报会一直响。现在是「连续 N 次异常才推第一条，推过之后沉默到恢复」，
     恢复时另推一条。状态文件放 `/tmp`：写 flash 每分钟擦一次受不了，代价是重启后
     会重新走一遍去抖（可接受）。
@@ -569,8 +584,8 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
 30. **`?v=` 版本串要跟页面一起改**。现在两个视图都指向 `?v=20261002e`，
     改完 `line.html` / `config.html` 记得同步 bump，否则 iframe 还是拿旧文档（见第 21 条）。
 31. **判内网不能做字符串前缀匹配**。原来是 `case "$src" in "$LAN_PREFIX"*)`，只能表达
-    「以 `192.168.66.` 开头」——掩码一换就错：`/16` 时 `192.168.67.5` 是内网却判外，
-    `/25` 时 `192.168.66.130` 是外却判内。现在按位比较（`int(ip / 2^(32-bits))` 比高位），
+    「以某个前缀开头」——掩码一换就错：`/16` 时相邻网段是内网却判外，
+    `/25` 时同前缀的大地址是外却判内。现在按位比较（`int(ip / 2^(32-bits))` 比高位），
     掩码可以是位数也可以是 `255.255.255.0` 形式。**busybox awk 没有 `and()`/`rshift()`**，
     所以用乘加代替左移、除法代替右移——double 在 2^53 以内精确，32 位整数放得下。
 32. **antd 的 Switch 不是 `<select>`**，没有 `.value`。状态在 `class` 上
@@ -585,7 +600,7 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
     里还要把 `0,1` 也当失败处理。
 34. **`curl -w '%{time_connect}'` 在 rc=52/56 时可能压根不填**，`$ms` 会是空串，
     过一遍 `awk` 就变成 `0 1` 写进日志。光靠退出码判断 `0|52|56` 算成功是不够的——
-    真机实测移动侧四个 HTTP 目标各有 500+ 条 `=0,1` 脏数据，曲线底部被画成一条假零线。
+    真机实测某个出口的四个 HTTP 目标各有 500+ 条 `=0,1` 脏数据，曲线底部被画成一条假零线。
     现在 `curl_parse` 里值 `<= 0` 一律记 `FAIL 1`（连接耗时不可能真的是 0），
     已落盘的老数据用 `tests/clean_zero.sh` 清洗（`s/=0,1 /=FAIL,100 /g`，改前自动备份
     `history.log.bak-zero`）。
@@ -608,9 +623,9 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
     重建时按它决定谁带 `active`，末尾再对总览 / TCP 这两个静态 pane 补一次。
     同一个坑的第二次踩法：**重建出的 `statBox-*` 是空 div，必须重画统计表**，
     否则切到出口页只有图和滑块、表是空的——`buildTabs()` 末尾因此补了 `renderStats()`。
-38. **`tab-ex:eth1~v4` 这种 id 不能写进 CSS 选择器**。冒号是伪类、波浪号是兄弟组合器，
-    `document.querySelector('#tab-ex\\:eth1')` 侥幸能跑但极易写错，
-    **一律用 `getElementById`**。真机上就有一次 `querySelector('#axis-ex\\:eth1~v4')`
+38. **`tab-ex:wan~v4` 这种 id 不能写进 CSS 选择器**。冒号是伪类、波浪号是兄弟组合器，
+    `document.querySelector('#tab-ex\\:wan')` 侥幸能跑但极易写错，
+    **一律用 `getElementById`**。真机上就有一次 `querySelector('#axis-ex\\:wan~v4')`
     返回 `null` 导致点击没生效。
 39. **隐藏容器里初始化的 Chart.js 尺寸是 0**，`switchTab` 里必须对**该页的所有区块**
     逐个 `resize()`（一个出口页现在有两张图），只 resize 一张的话另一张会一直是空的。
@@ -624,22 +639,22 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
     图看的是 `min/max`，两边口径能对不上。现在统一成全局 `xRange`：图取它、
     统计表取它、时间轴滑块也取它，`statWin` 退化成「往 `xRange` 里填值的一种快捷方式」。
     `xRangeCustom` 单独记「这个窗口是人拖出来的」，用来决定预设按钮该不该高亮。
-42. **`ping6 -I <接口名>` 在 PPPoE 上必然失败**，这是电信 IPv6 「一直 100% 丢包」的真正原因。
+42. **`ping6 -I <接口名>` 在 PPPoE 上必然失败**，这是 IPv6 「一直 100% 丢包」的真正原因。
     本固件 busybox 1.33 对点对点接口一律返回 `ping6: sendto: Permission denied`——
     包压根没发出去，却被记成了丢包。**改成绑该出口现读的全局 v6 地址**（`v6_src_of()`）：
 
     ```
-    ping6 -I pppoe-wan2         2400:3200::1  ->  Permission denied
-    ping6 -I 240e:358:...:89e1  2400:3200::1  ->  0% packet loss, 28ms
+    ping6 -I pppoe-wan         2400:3200::1  ->  Permission denied
+    ping6 -I <该出口的全局v6地址>  2400:3200::1  ->  0% packet loss, 28ms
     ```
 
     之所以源地址够用：v6 路由表里每条默认路由自带 `from <前缀>`
-    （`default from 240e:358:a001:e066::/64 via ... dev pppoe-wan2`），
+    （`default from <前缀>::/64 via ... dev pppoe-wan`），
     源地址一选定内核自己会选对出口，不需要绑设备。`/^f[cd]/` 要判掉 ULA 和链路本地。
-43. **v6 目标要实测，别挑网段地址**。`2402:4e00::`（腾讯 DNSPod 网段）和 `2409:8080::8`
-    两条出口都不回包，一开始就选错了。现行目标是
-    `阿里v6:2400:3200::1` / `移动v6:2409:8080:1::1` / `国际v6:2620:0:ccc::2`，
-    三个在两条出口上都是 0% 丢包。
+43. **v6 目标要实测，别挑网段地址**。有些运营商网段地址（例如自家 v6 段里的某个地址）
+    根本不发 ICMPv6 echo，一选就是 100% 丢包。现行的三个公共 DNS v6 地址
+    （`2400:3200::1` / `2409:8080:1::1` / `2620:0:ccc::2`）在各出口上都是 0% 丢包。
+    换线路时自己 ping 一遍再写进 `ICMP6_TARGETS`。
 44. **缩放边界要用插件自己的 `limits`，不能事后夹**。原先是在 `onZoomComplete` /
     `onPanComplete` 里调 `clampXToData()` 把轴拉回数据范围，手感上是「先缩进去、再被弹回来」，
     中途还看得到越界的空白画面。正确做法是给 `plugins.zoom.limits.x` 设
@@ -694,14 +709,13 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
     hash 文件名都不同，直接覆盖着拷会让本地 `deploy/www/lm/app/assets/` 里堆着上一版的
     `index-*.js`。必须先 `Remove-Item -Recurse -Force deploy\www\lm\app` 再拷。
     （路由器侧不受影响，因为 `install.sh` 里是先 `rm -rf /www/lm/app` 再铺。）
-56. **Tailscale 宣告了客户端自己所在的网段，会把到路由器的路由抢走**。路由器
-    `tailscale debug prefs` 的 `AdvertiseRoutes` 是 `["192.168.66.0/24"]`，
-    而 Windows 客户端（`192.168.66.21`）本身就处在这个网段里；一连上 Tailscale，
-    同前缀长度下 tailscale 接口的路由会压过本地以太网，于是 `192.168.66.1` 走隧道出去，
-    回包又因为 `ts-postrouting` 只对 `mark 0x40000` 做 SNAT 而回不来——表现就是
-    「一连接就打不开路由器界面」。修法：路由器 `tailscale set --advertise-routes=`，
-    或客户端关掉「接受子网路由」。诊断看 `route print -4 | findstr 192.168.66`
-    与 `tracert -4 -d -h 3 192.168.66.1`。
+56. **组网客户端宣告了它自己客户端所在的网段，会把到路由器的路由抢走**。这是任何
+    overlay 组网方案的通病（Tailscale / ZeroTier / WireGuard 都可能撞）：路由器的
+    `AdvertiseRoutes` 里包含了客户端本机所在的网段时，一连上组网，
+    同前缀长度下隧道接口的路由会压过本地以太网，于是到路由器管理地址的流量走隧道出去，
+    回程又因为只有带特定 mark 的流量才做 SNAT 而回不来——表现就是
+    「一连接就打不开路由器界面」。修法：路由器 `tailscale set --advertise-routes=`（或同款命令），
+    或客户端关掉「接受子网路由」。诊断看客户端的路由表与到管理地址的逐跳跟踪。
 57. **出口第 6 字段换语义时，老配置会静默失联**。第一版那张「出口 ↔ 目标」关系是
     `分组名`（`公网`/`内网`），第二版改成**目标名清单**。`install.sh` 有意不覆盖已有的
     `targets.conf`，所以升级后真机里还留着 `公网`——新代码 `case ",公网," in *",阿里DNS,"*)`
@@ -748,50 +762,53 @@ v4 的 ICMP 目标在部分线路上会被运营商封（标 `FAIL`），这是*
     （轮询后推进窗口）要分三种情况——盖满全量就跟着新数据放宽、右端贴着最新点就等宽平移、
     停在历史段就原地不动只做 clamp，判据容差取 1 秒（采样间隔 60 秒）。
 
-64. **停掉一个 WAN 接口，会把它的 IPv6 采集一起带走**。排查「除电信 IPv4 外全断」时把
-    `network.wan6` 关掉（为了掐断上游那台双线设备顺着 `eth1` 灌下来的电信 PD），代价是
-    `eth1` 只剩 `fe80::44ee:91ff:fe20:22b2/64` link-local —— `v6_src_of()` 是
-    `ip -6 addr show dev <if> scope global` 取第一个非 `fc`/`fd` 地址，取不到就直接空，
-    于是 `v6-eth1|阿里v6` / `移动v6` / `国际v6` 三条目标全变 `FAIL,100`，看板上看起来像
-    「移动 IPv6 没了」。恢复时 `reqprefix='no'` 必须留着：只要地址不要 PD，就不会再被
-    上游灌进电信前缀（实测恢复后 `ip -6 route show default` 里没有任何 `from 240e:… dev eth1`）。
+64. **停掉一个出口接口，会把它的 IPv6 采集一起带走**。排查「只有一条线路通、其余全断」时把
+    某个 WAN 接口关掉（为了掐断上游那台双线设备顺着另一条 LAN 口灌下来的 PD），代价是该
+    接口只剩 link-local —— `v6_src_of()` 是 `ip -6 addr show dev <if> scope global` 取第一个
+    非 `fc`/`fd` 地址，取不到就直接空，于是这个出口的三条 v6 目标全变 `FAIL,100`，
+    看板上看起来像「这条线路的 IPv6 没了」。恢复时 `reqprefix='no'` 必须留着：只要地址不要 PD，
+    就不会再被上游灌进别人的前缀（实测恢复后 `ip -6 route show default` 里没有任何
+    `from <前缀> dev <该接口>`）。
 
-65. **mwan3 会给本机发出的 IPv6 包打 mark，把电信 v6 送进一张没有 default 的策略表**。
-    症状极具误导性：看板上 `v6-pppoe-wan2|*` 恒为 `FAIL,100`，但 LAN 客户端走电信 v6
-    完全正常（`curl -6 https://www.taobao.com` → `http=200`）。根因链是
+65. **多 WAN 策略路由会给本机发出的 IPv6 包打 mark，把某个出口的 v6 送进一张没有 default
+    的策略表**。症状极具误导性：看板上 `v6-<接口>|*` 恒为 `FAIL,100`，但 LAN 客户端走
+    同一个出口的 v6 完全正常（`curl -6 https://www.taobao.com` → `http=200`）。根因链是
     `ip6tables -t mangle OUTPUT -j mwan3_hook` → fwmark `0x400` →
-    `2004: from all fwmark 0x400/0x3f00 lookup 4` → 表 4 里
-    `unreachable 240e:358:a001:c3e7::/64 dev lo` 比 default 更具体 → 路由查找阶段直接
-    判不可达。而 `mwan3 status` 的 `Directly connected ipv6 networks:` 是**空的**，说明
-    mwan3 根本没把 `pppoe-wan2` 的 v6 前缀认到接口名下（proto 是 `dhcpv6`、地址由
+    `<规则表号>: from all fwmark 0x400/0x3f00 lookup 4` → 表 4 里
+    `unreachable <前缀>::/64 dev lo` 比 default 更具体 → 路由查找阶段直接判不可达。
+    而 `mwan3 status` 的 `Directly connected ipv6 networks:` 是**空的**，说明
+    mwan3 根本没把该接口的 v6 前缀认到接口名下（proto 是 `dhcpv6`、地址由
     `odhcp6c` 下发，mwan3 读不到 `ipv6-address`）。修法：
-    `ip -6 rule add from 240e::/16 lookup main priority 100` —— 只让源地址落在电信 v6
-    段的本机流量走 main，移动的 `2409::/16` 不匹配、继续走原策略。这条规则 `mwan3 restart`
+    `ip -6 rule add from <该出口的运营商v6段> lookup main priority 100` —— 只让源地址落在
+    这个段里的本机流量走 main，另一个出口的段不匹配、继续走原策略。这条规则 `mwan3 restart`
     不会清（实测保住），但**重启后会丢**，所以放进
     `deploy/etc/hotplug.d/iface/99-lm-v6-rule`，任何接口事件都补一遍；
     `install.sh` 里再用 `sh … 99-lm-v6-rule apply` 立刻生效一次，不必等接口事件。
 66. **开了硬件 NAT 卸载，`/proc/net/dev` 里 99.9% 的流量是看不见的**。症状是「速率卡上
-    电信口一直显示几 KB/s，可是明明在下载」。`lsmod` 里出现 `mtkhnat`，同时
-    `/sys/kernel/debug/hnat/hook_toggle` 的值是 `enabled`（关掉它 `all_entry` 里的
+    某个出口一直显示几 KB/s，可是明明在下载」。`lsmod` 里出现 `mtkhnat`（或同类 `hwnat`），
+    同时 `/sys/kernel/debug/hnat/hook_toggle` 的值是 `enabled`（关掉它 `all_entry` 里的
     `state` 就全是 `BIND` 变 `UNBIND`，而且不再更新）。实测一次 10 MB/s 的下载：
-    `eth0`（DSA/QDMA 父设备）rx 10959 KB/s，`pppoe-wan2` rx 5.56 KB/s，`br-lan` rx 513 KB/s
+    父设备（这里叫 `eth0`）rx 10959 KB/s，某个拨号口 rx 5.56 KB/s，`br-lan` rx 513 KB/s
     —— 软件接口全加一起不到 2 MB/s。**LuCI 自带的「状态 → 实时信息」也救不了**：
     `/usr/libexec/rpcd/luci` 的 `getRealtimeStats` 最终调 `luci-bwc`，而 `/usr/bin/luci-bwc`
     的字符串表里数据源只有 `/sys/class/net/%s/statistics/%s`（同一个计数器），
     所以 LuCI 页面上的数字同样是错的 —— 别指望抄它。
 67. **要按出口分速率，就用 conntrack 的 `mark=`，别去解析 HNAT 的 tuple**。
     `/proc/net/nf_conntrack` 里每条连接的 `bytes` 在卸载后**仍然更新**（这条是关键，
-    `diag_ct.sh` 实测下载流的增量对得上 `eth0`），而且自带 `mark=` —— 那正是 mwan3 给每个
-    出口打的 fwmark，`EXITS` 第 4 列已经配了（`256`=eth1、`512,768`=pppoe-wan2），
+    `diag_ct.sh` 实测下载流的增量对得上父接口的 rx），而且自带 `mark=` —— 那正是策略路由
+    给每个出口打的 fwmark，`EXITS` 第 4 列已经配了（`256`=出口A、`512,768`=出口B），
     直接就是出口归属。解析 `/sys/kernel/debug/hnat/all_entry` 也能算，但那条路要自己猜：
-    - `=>` 后半段的 IPv6 字面量**零填充格式跟 `ip -6 addr` 给的不一样**：entry 里写
-      `240e0359:a0539e00`（32 位组大写带前导零），`ip -6 addr` 给 `240e:359:a053:9e00`，
+    - `=>` 后半段的 IPv6 字面量**零填充格式跟 `ip -6 addr` 给的不一样**：entry 里把每组写成
+      4 位十六进制大写（`20010db8:9abc...`），`ip -6 addr` 给的是压缩过的常规写法
+      （`2001:db8:9abc...`），同一地址两副模样，
       直接字符串匹配必然失配，得先规范化成「每组补零到 4 位 + 大写」。
-    - 出方向 entry 的 `=>` 部分是**垃圾值**（如 `192.168.66.21:5711->23.212.62.96:443=>36.14.3.89:37221->160.83.158.0:14943`），
-      拿不到 WAN IP，只能回头用 part1 的 `remote ip:port` 去查另一条带 WAN 的 entry 建的映射表。
+    - 出方向 entry 的 `=>` 部分是**垃圾值**（形如
+      `<内网地址>:<端口>-><远端>:<端口>=><完全无关的地址>:<端口>-><无关的地址>:<端口>`），
+      拿不到出口侧的 WAN IP，只能回头用 part1 的 `remote ip:port` 去查另一条带 WAN 的
+      entry 建的映射表。
     相比之下 conntrack 的行格式是规范的一等公民。
 68. **conntrack 的方向：第一个 `bytes` 是发起方向**。
-    `src=192.168.66.21 dst=23.212.62.96 ... bytes=A ... src=23.212.62.96 dst=192.168.66.21 ... bytes=B`
+    `src=<内网地址> dst=<远端> ... bytes=A ... src=<远端> dst=<内网地址> ... bytes=B`
     中，A 是内网→外网（上传），B 是外网→内网（下载）；`packets` 同理。用 `in_lan(dst)`
     判断谁发起的，外网主动连入内网时要对调。key 必须是**完整五元组**
     （`mark|src|sport|dst|dport`）—— 只用 `mark|src` 会让同一源的不同端口互相覆盖，
@@ -862,7 +879,7 @@ bgContainer `#141414`、bgElevated `#1f1f1f`、borderSecondary `#303030`。
 | `probe_mark.sh` | 实测 mark→接口映射、查看 uhttpd CGI 配置 |
 | `make_stat_mock.js` | 生成可手算核对的 mock 数据（值等于序号，便于验分位数）到 `tests/statmock/` |
 | `menu-argon.js` / `ui.js` / `luci.js` | 从真机抓回的 LuCI 前端源码副本，排查侧栏菜单渲染问题用 |
-| `diag_curl.sh` / `diag_curl2.sh` | 诊断移动出口 HTTP 目标失败：区分「线路不通」和「源地址策略路由不对」 |
+| `diag_curl.sh` / `diag_curl2.sh` | 诊断某个出口 HTTP 目标失败：区分「线路不通」和「源地址策略路由不对」 |
 | `diag_qq.sh` | 定位 `rc=52`（服务器按 Host 头掐断连接，握手其实已完成） |
 | `stability.sh` | 连跑 5 轮采集统计各目标成败率 |
 | `fix_names.sh` | 统一 history.log 里的目标名（改名后必须跑） |
@@ -872,7 +889,7 @@ bgContainer `#141414`、bgElevated `#1f1f1f`、borderSecondary `#303030`。
 | `clean_zero.sh` | 清洗历史 `=0,1` 脏数据为 `=FAIL,100`（改前自动备份 `history.log.bak-zero`） |
 | `verify_zero.sh` | 采集后立刻检查最新行里还有没有 `=0,1` |
 | `lossdist.sh` / `lossdist2.sh` | 早期定位用：按目标拆开看第二字段分布与原始行 |
-| `diag_ts.sh` | Tailscale 诊断：prefs（`AdvertiseRoutes`/`CorpDNS`）、status、`ip rule`、iptables 的 `ts-*` 链、各接口地址、uhttpd 监听 |
+| `diag_ts.sh` | 组网隧道诊断：prefs（`AdvertiseRoutes`/`CorpDNS`）、status、`ip rule`、iptables 的 `ts-*` 链、各接口地址、uhttpd 监听 |
 | `apply_target_matrix.sh` | 把真机上已有的 `targets.conf` 从「目标分组」迁到「显式目标清单」（升级必跑，见设置页那节） |
 | `verify_target_groups.sh` | 跑真脚本、只把 `ping`/`curl`/`nslookup` 换成记录桩，核对「哪个出口测了哪些目标」 |
 | `fix_target_groups_http.sh` | 补上 `HTTP_TARGETS`/`ICMP6_TARGETS` 漏掉的分组前缀（只改 `EXITS` 会漏测，见踩坑 57） |

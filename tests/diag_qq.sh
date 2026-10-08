@@ -1,9 +1,9 @@
 #!/bin/sh
 # 诊断 qq.com 这个 HTTP 目标为什么一直 FAIL
 CT=4
-EX_IF=eth1
+EX_IF=wan
 SRC=$(ip -4 addr show $EX_IF | awk '/inet /{sub(/\/.*/,"",$2); print $2; exit}')
-echo "eth1 当前源地址 = $SRC"
+echo "wan 当前源地址 = $SRC"
 
 echo
 echo "=== qq.com 解析结果（nslookup 223.5.5.5）==="

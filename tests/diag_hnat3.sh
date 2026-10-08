@@ -1,9 +1,9 @@
 #!/bin/sh
 # diag_hnat3.sh — 验证能否用 HNAT 表聚合出「分出口」真实速率
-TELV4=$(ip -4 addr show dev pppoe-wan2 2>/dev/null | awk '/inet /{sub(/\/.*/,"",$2); print $2; exit}')
-MOBV4=$(ip -4 addr show dev eth1 2>/dev/null | awk '/inet /{sub(/\/.*/,"",$2); print $2; exit}')
-TELP6=$(ip -6 addr show dev pppoe-wan2 2>/dev/null | awk '/inet6 /{sub(/\/.*/,"",$2); print $2; exit}' | tr -d ':' | cut -c1-8 | tr 'a-f' 'A-F')
-MOBP6=$(ip -6 addr show dev eth1 2>/dev/null | awk '/inet6 /{sub(/\/.*/,"",$2); print $2; exit}' | tr -d ':' | cut -c1-8 | tr 'a-f' 'A-F')
+TELV4=$(ip -4 addr show dev pppoe-wan 2>/dev/null | awk '/inet /{sub(/\/.*/,"",$2); print $2; exit}')
+MOBV4=$(ip -4 addr show dev wan 2>/dev/null | awk '/inet /{sub(/\/.*/,"",$2); print $2; exit}')
+TELP6=$(ip -6 addr show dev pppoe-wan 2>/dev/null | awk '/inet6 /{sub(/\/.*/,"",$2); print $2; exit}' | tr -d ':' | cut -c1-8 | tr 'a-f' 'A-F')
+MOBP6=$(ip -6 addr show dev wan 2>/dev/null | awk '/inet6 /{sub(/\/.*/,"",$2); print $2; exit}' | tr -d ':' | cut -c1-8 | tr 'a-f' 'A-F')
 echo "TELV4=[$TELV4] MOBV4=[$MOBV4] TELP6=[$TELP6] MOBP6=[$MOBP6]"
 echo "--- /proc/net 候选 ---"
 ls /proc/net/ | tr '\n' ' '
@@ -11,14 +11,14 @@ echo
 echo "--- all_entry 行数 ---"
 wc -l < /sys/kernel/debug/hnat/all_entry
 echo "--- netdev A ---"
-for f in eth0 pppoe-wan2 eth1 BLUE4 br-lan; do
+for f in eth0 pppoe-wan wan BLUE4 br-lan; do
   echo "$f $(cat /sys/class/net/$f/statistics/rx_bytes) $(cat /sys/class/net/$f/statistics/tx_bytes)"
 done
 cat /sys/kernel/debug/hnat/all_entry > /tmp/hnat_a 2>/dev/null
 sleep 6
 cat /sys/kernel/debug/hnat/all_entry > /tmp/hnat_b 2>/dev/null
 echo "--- netdev B ---"
-for f in eth0 pppoe-wan2 eth1 BLUE4 br-lan; do
+for f in eth0 pppoe-wan wan BLUE4 br-lan; do
   echo "$f $(cat /sys/class/net/$f/statistics/rx_bytes) $(cat /sys/class/net/$f/statistics/tx_bytes)"
 done
 echo "--- HNAT 分出口 6 秒增量 ---"

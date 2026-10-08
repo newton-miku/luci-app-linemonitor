@@ -24,9 +24,6 @@ page.html
 
 # ── 含凭据的本地文件 ────────────────────────────────────────
 # 这些只在路由器上存在，绝不入库
-**/smstrun-feishu.conf
-**/smstrun.conf
-**/smstrun-AK68.conf
 **/tailscaled.state
 **/.ssh/
 *.pem

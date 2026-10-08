@@ -1,5 +1,5 @@
 CT=4
-EX_IF=eth1
+EX_IF=wan
 echo "=== A: 带 Host 头（line_monitor 现在的写法）==="
 for i in 1 2 3; do
   ms=$(curl --interface "$EX_IF" -o /dev/null -s -w '%{time_connect}' --connect-timeout "$CT" -H "Host: weixin.qq.com" "http://117.89.182.41" 2>/dev/null)

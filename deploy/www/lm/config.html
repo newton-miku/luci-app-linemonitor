@@ -158,7 +158,7 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
       </div>
       <div class="ant-card-body">
         <div class="lm-grid2">
-          <div class="lm-field"><label>内网网段（CIDR，留空 = 自动识别）</label><input class="ant-input" type="text" id="lanNets" placeholder="留空自动识别；也可写 192.168.66.0/24 10.0.0.0/8"></div>
+          <div class="lm-field"><label>内网网段（CIDR，留空 = 自动识别）</label><input class="ant-input" type="text" id="lanNets" placeholder="留空自动识别；也可写 192.168.1.0/24 10.0.0.0/8"></div>
         </div>
       </div>
     </div>
@@ -369,7 +369,7 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
           </div>
           <div class="lm-field">
             <label>ALERT_IGNORE — 额外忽略（空格分隔）</label>
-            <input class="ant-input" type="text" id="alertIgnore" placeholder="抖音 pppoe-wan2|QQ">
+            <input class="ant-input" type="text" id="alertIgnore" placeholder="抖音 pppoe-wan|QQ">
           </div>
         </div>
         <p class="lm-hint">
@@ -378,10 +378,10 @@ select.ant-input option { background:#1f1f1f; color:rgba(255,255,255,.85); }
           <b>丢包 ≥ ALERT_LOSS_PCT</b> 或 <b>延迟 > ALERT_MAX_MS</b> = 能通但质量差 —— 推一条提醒；
           <b>恢复正常不推</b>（丢包抖动太频繁，报恢复只会更吵）。<br>
           单个目标要连续 <code>ALERT_DEBOUNCE</code> 次处于同一等级才推第一条，避免把偶发抖动
-          （移动线路每隔几十分钟会有一次 1 秒左右的尖峰）当成故障。
+          （有些线路每隔几十分钟会有一次 1 秒左右的尖峰）当成故障。
           <code>ALERT_COOLDOWN=0</code> 表示同等级不再重复推；设成 3600 就是没好转时每小时再提一次。<br>
           同一轮里同类多个目标会<b>合并成一条消息</b>发出去。<br>
-          当前移动和电信的 IPv6 目标常年不可达，所以范围默认 <code>v4</code>，不然会一直响。
+          有些线路的 IPv6 目标常年不可达，所以范围默认 <code>v4</code>，不然会一直响。
         </p>
       </div>
     </div>
@@ -668,8 +668,8 @@ function addExitRow(e) {
   tr.className = 'ant-table-row ant-table-row-level-0';
   tr.dataset.only = e.only || '';
   tr.innerHTML =
-    '<td class="ant-table-cell"><input class="ant-input e-if" type="text" list="ifaceList" placeholder="eth1"></td>' +
-    '<td class="ant-table-cell"><input class="ant-input e-label" type="text" placeholder="移动"></td>' +
+    '<td class="ant-table-cell"><input class="ant-input e-if" type="text" list="ifaceList" placeholder="wan"></td>' +
+    '<td class="ant-table-cell"><input class="ant-input e-label" type="text" placeholder="显示名，如 宽带A"></td>' +
     '<td class="ant-table-cell"><input class="ant-input e-src" type="text" placeholder="auto 或留空"></td>' +
     '<td class="ant-table-cell"><input class="ant-input e-mark" type="text" placeholder="256"></td>' +
     '<td class="ant-table-cell"><select class="ant-input e-type">' + exitTypeOptions(e.type || 'both') + '</select></td>' +
@@ -896,7 +896,7 @@ function buildConf() {
   return [
     '# ============================================================',
     '# 线路监测配置',
-    '# 这个文件由设置页 http://192.168.66.1/lm/config.html 生成，',
+    '# 这个文件由设置页 http://<路由器IP>/lm/config.html 生成，',
     '# 也可以直接用 vi 改 —— 采集脚本每轮都会重新读取，保存即生效。',
     '# ============================================================',
     '',
@@ -979,7 +979,7 @@ function buildConf() {
     '# 监测范围：v4 / v6 / all',
     'ALERT_SCOPE="' + $('alertScope').value + '"',
     '',
-    '# 额外忽略的目标，空格分隔。可以写目标名（微信）、出口名（eth1）或整键（eth1|微信）。',
+    '# 额外忽略的目标，空格分隔。可以写目标名（微信）、出口名（wan）或整键（wan|微信）。',
     'ALERT_IGNORE="' + $('alertIgnore').value.trim() + '"',
     ''
   ].join('\n');

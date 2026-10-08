@@ -11,19 +11,19 @@ echo "===== 各 v6 键最近 40 次的值分布 ====="
 tail -n 40 /www/lm/history.log | tr ' ' '\n' | grep '^v6-' | sed 's/=.*//' | sort | uniq -c
 
 echo
-echo "===== 电信 v6 目标最近 40 次成功次数 ====="
-for t in 阿里v6 腾讯v6 移动v6; do
-  ok=$(tail -n 40 /www/lm/history.log | tr ' ' '\n' | grep "^v6-pppoe-wan2|$t=" | grep -vc FAIL)
-  tot=$(tail -n 40 /www/lm/history.log | tr ' ' '\n' | grep -c "^v6-pppoe-wan2|$t=")
-  echo "  电信 $t : $ok / $tot 成功"
+echo "===== 出口A v6 目标最近 40 次成功次数 ====="
+for t in 阿里v6 腾讯v6 运营商v6; do
+  ok=$(tail -n 40 /www/lm/history.log | tr ' ' '\n' | grep "^v6-pppoe-wan|$t=" | grep -vc FAIL)
+  tot=$(tail -n 40 /www/lm/history.log | tr ' ' '\n' | grep -c "^v6-pppoe-wan|$t=")
+  echo "  出口A $t : $ok / $tot 成功"
 done
 
 echo
-echo "===== eth1 侧 v6 目标最近 40 次 ====="
-for t in 阿里v6 腾讯v6 移动v6; do
-  ok=$(tail -n 40 /www/lm/history.log | tr ' ' '\n' | grep "^v6-eth1|$t=" | grep -vc FAIL)
-  tot=$(tail -n 40 /www/lm/history.log | tr ' ' '\n' | grep -c "^v6-eth1|$t=")
-  echo "  eth1 $t : $ok / $tot 成功"
+echo "===== wan 侧 v6 目标最近 40 次 ====="
+for t in 阿里v6 腾讯v6 运营商v6; do
+  ok=$(tail -n 40 /www/lm/history.log | tr ' ' '\n' | grep "^v6-wan|$t=" | grep -vc FAIL)
+  tot=$(tail -n 40 /www/lm/history.log | tr ' ' '\n' | grep -c "^v6-wan|$t=")
+  echo "  wan $t : $ok / $tot 成功"
 done
 
 echo

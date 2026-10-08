@@ -1,5 +1,5 @@
 CT=4
-EX_IF=eth1
+EX_IF=wan
 echo "--- QQ (113.108.81.189) 带 Host 头 30 次，看 rc=52 时 -w 有没有输出 ---"
 n52=0
 for i in $(seq 1 30); do

@@ -1,29 +1,29 @@
 #!/bin/sh
-# 追查 v6 实际连通性、上游 192.168.8.1 身份、以及 eth1 为何拿到电信 PD
+# 追查 v6 实际连通性、上游 203.0.113.1 身份、以及 wan 为何拿到出口A PD
 echo "=== 1) v6 连通性：本机 → 公网 ==="
-echo "--- 默认路由于 pppoe-wan2 ---"
+echo "--- 默认路由于 pppoe-wan ---"
 ping6 -c 3 -W 2 2400:3200::1 2>&1 | tail -n 4
-echo "--- 显式绑电信源地址 ---"
-ping6 -c 3 -W 2 -I 240e:358:a001:8a7e:1093:74c3:28c2:c6a3 2400:3200::1 2>&1 | tail -n 4
-echo "--- 绑 pppoe-wan2 接口 ---"
-ping6 -c 3 -W 2 -I pppoe-wan2 2400:3200::1 2>&1 | tail -n 4
-echo "--- 电信 DNS 240e:f:a::6 ---"
+echo "--- 显式绑出口A源地址 ---"
+ping6 -c 3 -W 2 -I 2001:db8:1234:5678 2400:3200::1 2>&1 | tail -n 4
+echo "--- 绑 pppoe-wan 接口 ---"
+ping6 -c 3 -W 2 -I pppoe-wan 2400:3200::1 2>&1 | tail -n 4
+echo "--- 出口A DNS 240e:f:a::6 ---"
 ping6 -c 3 -W 2 240e:f:a::6 2>&1 | tail -n 4
 
 echo
 echo "=== 2) v6 出口选择 ==="
 ip -6 route get 2400:3200::1 2>&1
 echo "--- 以 lan 前缀为源 ---"
-ip -6 route get 2400:3200::1 from 240e:359:a052:d00::1 2>&1
+ip -6 route get 2400:3200::1 from 2001:db8:9abc:def0::1 2>&1
 
 echo
-echo "=== 3) 上游 192.168.8.1 身份 ==="
-ip neigh show dev eth1 | grep -E '192\.168\.8\.1 ' 
+echo "=== 3) 上游 203.0.113.1 身份 ==="
+ip neigh show dev wan | grep -E '192\.168\.8\.1 ' 
 echo "--- 同网段其他设备（说明这是个真 LAN 还是点对点）---"
-ip neigh show dev eth1 | head -n 15
+ip neigh show dev wan | head -n 15
 
 echo
-echo "=== 4) eth1 的 dhcpv6 日志 ==="
+echo "=== 4) wan 的 dhcpv6 日志 ==="
 logread | grep -i odhcp6c | tail -n 25
 echo "--- odhcp6c 进程 ---"
 ps w | grep '[o]dhcp6c'
@@ -41,8 +41,8 @@ echo "=== 7) v6 地址冲突/DAD 日志 ==="
 logread | grep -iE 'duplicate|conflict|dad|DAD' | tail -n 15
 
 echo
-echo "=== 8) eth1 上的 v6 地址 ==="
-ip -6 addr show eth1
+echo "=== 8) wan 上的 v6 地址 ==="
+ip -6 addr show wan
 
 echo
 echo "=== 9) 所有 v6 默认路由与表 4 ==="

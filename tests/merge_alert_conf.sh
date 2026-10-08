@@ -37,7 +37,7 @@ echo "=== v6 规则在位 ==="
 ip -6 rule show | head -4
 
 echo
-echo "=== 采集一次，看电信 v6 是否恢复 ==="
+echo "=== 采集一次，看出口A v6 是否恢复 ==="
 sh /usr/bin/line_monitor.sh >/dev/null 2>&1
 tail -n 1 /www/lm/history.log | tr ' ' '\n' | grep -E '^v6-' | sort
 

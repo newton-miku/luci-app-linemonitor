@@ -5,7 +5,7 @@ sh -n /usr/bin/line_monitor.sh && echo "SHELL_SYNTAX_OK"
 
 echo
 echo "===== v6_src_of 探测结果 ====="
-for i in eth1 pppoe-wan2; do
+for i in wan pppoe-wan; do
     s=$(ip -6 addr show dev "$i" scope global 2>/dev/null |
         awk '/inet6 /{sub(/\/.*/,"",$2); if ($2 !~ /^f[cd]/) { print $2; exit }}')
     printf '%-14s -> %s\n' "$i" "${s:-（取不到）}"
@@ -13,7 +13,7 @@ done
 
 echo
 echo "===== 各 v6 目标逐接口实测 ====="
-for i in eth1 pppoe-wan2; do
+for i in wan pppoe-wan; do
     s=$(ip -6 addr show dev "$i" scope global 2>/dev/null |
         awk '/inet6 /{sub(/\/.*/,"",$2); if ($2 !~ /^f[cd]/) { print $2; exit }}')
     for t in 2400:3200::1 2402:4e00:: 2409:8080::8; do

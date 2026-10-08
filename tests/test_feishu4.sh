@@ -10,8 +10,8 @@ FWIP=$(nslookup open.feishu.cn 223.5.5.5 2>/dev/null | awk '/^Address [0-9]+:/{p
 echo "resolved FWIP=$FWIP"
 curl -s -m 20 --resolve "open.feishu.cn:443:$FWIP" -X POST -H 'Content-Type: application/json' -d '{"msg_type":"text","content":{"text":"连通性测试 via --resolve"}}' -w '\nhttp=%{http_code}\n' "https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_HOOK_ID"
 echo
-echo "=== 5. /etc/resolv.conf 实际生效的 DNS 与 tailscale 状态 ==="
-tailscale status 2>&1 | head -5
+echo "=== 5. /etc/resolv.conf 实际生效的 DNS 与 组网客户端 状态 ==="
+组网客户端 status 2>&1 | head -5
 echo "--- nslookup 用 100.100.100.100 ---"
 nslookup open.feishu.cn 100.100.100.100 2>&1 | tail -4
 echo "=== 6. dnsmasq 监听 ==="

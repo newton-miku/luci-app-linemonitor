@@ -208,7 +208,7 @@ body {
         <div class="lm-filters">
           <select id="fService" aria-label="按服务过滤"><option value="">全部服务</option></select>
           <select id="fIface" aria-label="按出口过滤"><option value="">全部出口</option></select>
-          <input id="fClient" aria-label="按设备IP过滤" placeholder="设备IP过滤，如 192.168.66.24">
+          <input id="fClient" aria-label="按设备IP过滤" placeholder="设备IP过滤，如 192.168.1.50">
           <span class="lm-hint">SYN_SENT（卡住的连接）<span class="lm-syn" id="synCount">0</span> 个</span>
           <span class="lm-hint" id="tcpTime" style="margin-left:auto"></span>
         </div>
@@ -253,11 +253,11 @@ const LS_KEY_STATWIN = 'lm_statwin';
 
 // 内置默认值：读不到 config.json 时退回这套，保证看板永远能开
 const DEFAULT_EXITS = [
-  { if:'eth1',        label:'移动', type:'both' },
-  { if:'pppoe-wan2',  label:'电信', type:'both' }
+  { if:'wan',       label:'出口A', type:'both' },
+  { if:'pppoe-wan', label:'出口B', type:'both' }
 ];
-const DEFAULT_V4_TARGETS = ['阿里DNS','腾讯DNS','CNNIC','微信','淘宝','B站','字节','QQ'];
-const DEFAULT_V6_TARGETS = ['阿里v6','腾讯v6','移动v6'];
+const DEFAULT_V4_TARGETS = ['阿里DNS','腾讯DNS','CNNIC','微信','淘宝','B站','抖音','QQ'];
+const DEFAULT_V6_TARGETS = ['阿里v6','腾讯v6','运营商v6'];
 
 let V4_TARGETS = DEFAULT_V4_TARGETS.slice();
 let V6_TARGETS = DEFAULT_V6_TARGETS.slice();
@@ -292,12 +292,12 @@ function targetsForExit(e, fam) {
   return list.filter(n => inExitScope(e, n));
 }
 
-// 标签页键：出口页统一用 'ex:<接口名>'。DOM id 会拼成 'tab-ex:eth1' 这种带冒号的
+// 标签页键：出口页统一用 'ex:<接口名>'。DOM id 会拼成 'tab-ex:wan' 这种带冒号的
 // 形式，一律用 getElementById 取 —— 冒号在 CSS 选择器里是伪类，不能直接写。
 const tabKeyOf = iface => 'ex:' + iface;
 
 // 曲线区块：一个出口页里 IPv4 / IPv6 各占一块。
-// 区块键在标签页键后面接 '~v4' / '~v6'，DOM id 拼成 'chart-ex:eth1~v4'。
+// 区块键在标签页键后面接 '~v4' / '~v6'，DOM id 拼成 'chart-ex:wan~v4'。
 // 冒号和波浪号都在 getElementById 里正常，只是不能写进 CSS 选择器。
 const blockKeyOf = (iface, fam) => tabKeyOf(iface) + '~' + fam;
 function blocksOf(iface) {
@@ -1065,7 +1065,7 @@ function initLineTab(blockKey, canvasId) {
     options: lineOptions()
   });
   const cv = document.getElementById(canvasId);
-  // 移动端双指缩放需要触摸事件
+  // 手机端双指缩放需要触摸事件
   cv.addEventListener('touchstart', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
   // 双击图表 = 还原窗口（跟拖时间轴到两端等价）
   cv.addEventListener('dblclick', () => {

@@ -7,7 +7,7 @@ echo "=== /sys/class/net/*/statistics 5 轮（每 2 秒） ==="
 i=1
 while [ $i -le 5 ]; do
     echo "--- round $i ---"
-    for f in BLUE4 eth0 eth1 eth2 pppoe-wan2 br-lan lan1 lan2 lan3 ra0 rax0; do
+    for f in BLUE4 eth0 wan eth2 pppoe-wan br-lan lan1 lan2 lan3 ra0 rax0; do
         rx=$(cat /sys/class/net/$f/statistics/rx_bytes 2>/dev/null) || continue
         tx=$(cat /sys/class/net/$f/statistics/tx_bytes 2>/dev/null)
         echo "$f rx=$rx tx=$tx"

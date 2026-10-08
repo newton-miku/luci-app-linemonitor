@@ -17,7 +17,7 @@ snap() {
     }' $CT
 }
 netsnap() {
-  awk '/^ *(eth0|BLUE4|pppoe-wan2|br-lan|eth1|lan2|eth3):/ {
+  awk '/^ *(eth0|BLUE4|pppoe-wan|br-lan|wan|lan2|eth3):/ {
     name=$1; gsub(/:/,"",name); print name, $2, $10
   }' /proc/net/dev
 }
